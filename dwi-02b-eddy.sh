@@ -1,0 +1,258 @@
+#!/bin/bash
+
+#SBATCH --job-name=eddy
+#SBATCH --mem=4G
+#SBATCH --partition=luna-gpu-short
+#SBATCH --cpus-per-task=1
+#SBATCH --time=00-2:00:00
+#SBATCH --nice=2000
+#SBATCH --qos=anw
+#SBATCH --output %x_%A.log
+
+# Written by C. Vriend - AmsUMC Jun 2024
+# c.vriend@amsterdamumc.nl
+
+# usage instructions
+Usage() {
+    cat <<EOF
+
+    (C) C.Vriend - 9/7/2025 - dwi-02b-eddy.sh
+   
+    Usage: ./dwi-02b-eddy.sh <5 inputs>
+  
+
+EOF
+    exit 1
+}
+
+[ _$5 = _ ] && Usage
+
+module load fsl/6.0.7.6
+
+workdir=${1}
+outputdir=${2}
+bidsdir=${3}
+subj=${4}
+method=${5}
+
+for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
+    if [ ! -d ${dwidir} ]; then
+        continue
+    fi
+    sessiondir=$(dirname ${dwidir})
+
+    # if [[ $(ls ${sessiondir}/dwi/*dwi.nii.gz | wc -l) -gt 1 ]]; then
+    #     echo -e "${RED}ERROR! this script cannot handle >1 dwi scan per session${NC}"
+    #     echo -e "${RED}exiting script${NC}"
+    #     exit
+    # fi
+
+    session=$(echo "${sessiondir}" | grep -oP "(?<=${subj}/).*")
+    if [ -z ${session} ]; then
+        sessionpath=/
+        sessionfile=_
+    else
+        sessionpath=/${session}/
+        sessionfile=_${session}_
+
+    fi
+    echo -e ${YELLOW}----------------------${NC}
+    echo -e ${YELLOW}running EDDY on dwi data${NC}
+    echo -e ${YELLOW}${subj}${NC}
+    echo -e ${YELLOW}${session}${NC}
+    echo -e ${YELLOW}----------------------${NC}
+
+    # inputs
+    dwiworkdir=${workdir}/${subj}${sessionpath}dwi
+    DWImain=${dwiworkdir}/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz
+    DWImask=${dwiworkdir}/${subj}${sessionfile}space-dwi_desc-brain-uncorrected_mask.nii.gz
+    DWIacqp=${dwiworkdir}/${subj}${sessionfile}acq-DWI_desc-acqparams.tsv
+    DWIbvecs=${dwidir}/${subj}${sessionfile}dwi.bvec
+    DWIbvals=${dwidir}/${subj}${sessionfile}dwi.bval
+    DWIjson=${dwidir}/${subj}${sessionfile}dwi.json
+    topup=${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-topup
+    DWIout=${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc
+
+    # choose method of eddy correction (default or volcorr)
+
+    basedir=$(dirname DWImain)
+    cd ${basedir}
+
+    # create index.txt file
+    idx=$(fslnvols ${DWImain})
+    printf '1 %.0s' $(seq 1 "$idx") >${basedir}/index.txt
+
+    mb_factor=$(jq '.MultibandAccelerationFactor' "${DWIjson}")
+
+    # Check if the MultibandAccelerationFactor exists in the JSON file
+    if [ -z "$mb_factor" ] || [ "$mb_factor" == "null" ]; then
+        echo "Error: MultibandAccelerationFactor not found in json_file"
+    else
+        echo "Multiband factor = $mb_factor"
+    fi
+
+    # json available with slice-timing?
+    if jq -e '.SliceTiming' "${DWIjson}" >/dev/null; then
+        STavail=1
+    else
+        STavail=0
+    fi
+
+    # default
+    if [[ ${method} == "default" ]]; then
+        eddy_cuda10.2 \
+            --imain=${DWImain} \
+            --mask=${DWImask} \
+            --acqp=${DWIacqp} \
+            --index=index.txt \
+            --bvecs=${DWIbvecs} \
+            --bvals=${DWIbvals} \
+            --out=${DWIout} \
+            --topup=${topup} \
+            --repol --cnr_maps \
+            --slm=linear \
+            --estimate_move_by_susceptibility --verbose
+
+        # run QC
+        echo
+        echo "running QC"
+        eddy_quad ${DWIout} \
+            -idx index.txt \
+            -par ${DWIacqp} \
+            -m ${DWImask} \
+            -b ${DWIbvals} \
+            -f ${topup}_fieldmap.nii.gz
+
+    elif [[ ${method} == "volcorr" ]]; then
+
+        if ((STavail == 1)); then
+            # w/ slice-to-vol correction
+            eddy_cuda10.2 \
+                --imain=${DWImain} \
+                --mask=${DWImask} \
+                --acqp=${DWIacqp} \
+                --index=index.txt \
+                --json=${DWIjson} \
+                --bvecs=${DWIbvecs} \
+                --bvals=${DWIbvals} \
+                --out=${DWIout} \
+                --topup=${topup} \
+                --repol --cnr_maps \
+                --slm=linear \
+                --estimate_move_by_susceptibility --verbose \
+                --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10 \
+                --niter=6 --fwhm=15,10,4,2,0,0 \
+                --mporder=8 --s2v_niter=8 --json=${DWIjson} \
+                --s2v_lambda=1 --s2v_interp=trilinear >${basedir}/eddy.log
+        fi
+  	echo
+        echo "running QC"
+        eddy_quad ${DWIout} \
+            -idx index.txt \
+            -par ${DWIacqp} \
+            -m ${DWImask} \
+            -b ${DWIbvals} \
+            -f ${topup}_fieldmap.nii.gz \
+	-g ${DWIout}.eddy_rotated_bvecs \
+	-j ${DWIjson} \
+	-v
+
+    elif [[ ${method} == "volcorrnosdc" ]]; then
+
+        if ((STavail == 1)); then
+            # w/ slice-to-vol correction nomove by suscep.
+            eddy_cuda10.2 \
+                --imain=${DWImain} \
+                --mask=${DWImask} \
+                --acqp=${DWIacqp} \
+                --index=index.txt \
+                --json=${DWIjson} \
+                --bvecs=${DWIbvecs} \
+                --bvals=${DWIbvals} \
+                --out=${DWIout} \
+                --topup=${topup} \
+                --repol --cnr_maps \
+                --slm=linear \
+                 --verbose \
+                --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10 \
+                --niter=6 --fwhm=15,10,4,2,0,0 \
+                --mporder=8 --s2v_niter=8 --json=${DWIjson} \
+                --s2v_lambda=1 --s2v_interp=trilinear >${basedir}/eddy.log
+
+  	echo
+        echo "running QC"
+        eddy_quad ${DWIout} \
+            -idx index.txt \
+            -par ${DWIacqp} \
+            -m ${DWImask} \
+            -b ${DWIbvals} \
+            -f ${topup}_fieldmap.nii.gz \
+	-g ${DWIout}.eddy_rotated_bvecs \
+	-j ${DWIjson} \
+	-v
+
+        else
+
+            eddy_cuda10.2 \
+                --imain=${DWImain} \
+                --mask=${DWImask} \
+                --acqp=${DWIacqp} \
+                --index=index.txt \
+                --json=${DWIjson} \
+                --bvecs=${DWIbvecs} \
+                --bvals=${DWIbvals} \
+                --out=${DWIout} \
+                --topup=${topup} \
+                --repol --cnr_maps \
+                --slm=linear \
+                --estimate_move_by_susceptibility --verbose
+            --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10 \
+                --niter=8 --fwhm=10,6,4,2,0,0,0,0
+            --mporder=8 --s2v_niter=8 --slspec=../slspec.txt \
+                --s2v_lambda=1 --s2v_interp=trilinear >${basedir}/eddy.log
+        fi
+    else
+
+        echo "proper method for eddy not set"
+        echo "exiting script"
+        exit
+    fi
+
+    cp eddy_*.log ${outputdir}/dwi-preproc/${subj}${sessionpath}logs/${subj}${sessionfile}eddy.log
+
+    # rename output
+    cd ${workdir}/${subj}${sessionpath}dwi
+
+    cp ${subj}${sessionfile}space-dwi_desc-preproc.eddy_rotated_bvecs \
+        ${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec
+    cp ${subj}${sessionfile}space-dwi_desc-preproc.nii.gz \
+        ${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz
+    cp ${subj}${sessionfile}space-dwi_desc-preproc.eddy_cnr_maps.nii.gz \
+        ${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz
+    cp ${DWIbvals} \
+        ${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval
+    mv *.qc eddyqc
+
+    cd ${workdir}/${subj}${sessionpath}dwi
+
+    rsync -av ${subj}${sessionfile}space-dwi*_dwi.* ${subj}${sessionfile}space-dwi_desc-brain-uncorrected_mask.nii.gz eddyqc \
+        ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi
+
+    # clean-up
+    if [ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz ] &&
+        [ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec ] &&
+        [ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz ]; then
+        #    rm -r ${workdir}/${subj}${sessionpath}
+        #    rm ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/*meanb0* \
+        #        ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/*dns+degibbs*
+
+        echo
+        echo -e ${GREEN}FINISHED preprocessing ${subj}${sessionpath}${NC}
+        echo
+
+    else
+        echo -e "${RED}ERROR! not all output was created successfully${NC}"
+
+    fi
+
+done

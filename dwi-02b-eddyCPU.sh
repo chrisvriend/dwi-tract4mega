@@ -2,11 +2,11 @@
 
 #SBATCH --job-name=eddy
 #SBATCH --mem=4G
-#SBATCH --partition=luna-gpu-short
+#SBATCH --partition=luna-cpu-short
 #SBATCH --cpus-per-task=4
-#SBATCH --time=00-2:00:00
+#SBATCH --time=00-8:00:00
 #SBATCH --nice=2000
-#SBATCH --qos=anw
+#SBATCH --qos=anw-cpu
 #SBATCH --output %x_%A.log
 
 # Written by C. Vriend - AmsUMC Jun 2024
@@ -24,6 +24,14 @@ Usage() {
 EOF
     exit 1
 }
+
+
+# Define color variables
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[34m'
+NC='\033[0m' # No Color
 
 
 module load fsl/6.0.7.6
@@ -57,9 +65,12 @@ for var in bidsdir outputdir workdir subj method; do
     fi
 done
 if [[ $missing -eq 1 ]]; then
-    && Usage
+    Usage
 fi
 
+echo
+echo -e "${BLUE}chosen method for eddy: ${method}${NC}"
+echo
 
 for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
     if [ ! -d ${dwidir} ]; then
@@ -108,16 +119,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
     idx=$(fslnvols ${DWImain})
     printf '1 %.0s' $(seq 1 "$idx") >${basedir}/index.txt
 
-    mb_factor=$(jq '.MultibandAccelerationFactor' "${DWIjson}")
-
-    # Check if the MultibandAccelerationFactor exists in the JSON file
-    if [ -z "$mb_factor" ] || [ "$mb_factor" == "null" ]; then
-        echo "Error: MultibandAccelerationFactor not found in json_file"
-    else
-        echo "Multiband factor = $mb_factor"
-    fi
-
-    # json available with slice-timing?
+        # json available with slice-timing?
     if jq -e '.SliceTiming' "${DWIjson}" >/dev/null; then
         STavail=1
     else
@@ -126,7 +128,8 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
     # default
     if [[ ${method} == "default" ]]; then
-        eddy_openmp \
+    # adding json input will let the cmd fail if json does not contain ST info
+        eddy \
             --imain=${DWImain} \
             --mask=${DWImask} \
             --acqp=${DWIacqp} \
@@ -153,7 +156,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
         if ((STavail == 1)); then
             # w/ slice-to-vol correction
-            eddy_openmp \
+            eddy \
                 --imain=${DWImain} \
                 --mask=${DWImask} \
                 --acqp=${DWIacqp} \
@@ -193,7 +196,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
         if ((STavail == 1)); then
             # w/ slice-to-vol correction nomove by suscep.
-            eddy_openmp \
+            eddy \
                 --imain=${DWImain} \
                 --mask=${DWImask} \
                 --acqp=${DWIacqp} \
@@ -230,7 +233,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
     elif [[ ${method} == "nofmap" ]]; then
 
-        eddy_openmp \
+        eddy \
             --imain=${DWImain} \
             --mask=${DWImask} \
             --acqp=${DWIacqp} \

@@ -3,15 +3,17 @@
 # (C) Chris Vriend - Amsterdam UMC - Okt 19 2025
 
 #SBATCH --job-name=dwi-preproc
-#SBATCH --mem=6G
+#SBATCH --mem=24G
 #SBATCH --partition=luna-cpu-short
 #SBATCH --qos=anw-cpu
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --time=00-02:00:00
 #SBATCH --nice=2000
 #SBATCH --output=dwi-preproc_%A.log
 
 #notes:
+# memory can drastically be lowered when no synb0 is run. 
+# PM: start job with wrapper script that specifies mem?
 usage() {
     echo "Usage: $0 -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> -c <scriptdir>"
     exit 1
@@ -33,7 +35,7 @@ module load freesurfer # v8.1
 conda activate /scratch/anw/share/python-env/mrtrix
 synthstrippath=/scratch/anw/share-np/fmridenoiser/synthstrip.1.2.sif
 #synbpath=/opt/aumc-containers/apptainer/synb0-disco/synb0-disco_v3.1.sif
-synbpath=/scratch/anw/cvriend/synb0/synb0/
+synbpath=/scratch/anw/cvriend/synb0mod.sif
 threads=8
 FSlicense=/opt/aumc-apps-eb/software/FreeSurfer/license.txt
 
@@ -94,6 +96,7 @@ mkdir -p "${outputdir}/dwi-preproc"
 total_sessions=0
 done_sessions=0
 
+
 for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
     total_sessions=$((total_sessions+1))
@@ -101,7 +104,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
     if [ ! -d ${dwidir} ]; then
         
         done_sessions=$((done_sessions+1))
-        exit
+        continue
 
     fi
 
@@ -156,7 +159,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
     dwi_json_path=$(ls ${sessiondir}/dwi/${subj}${sessionfile}dwi.json)
     # extract TotalReadoutTime
     dwi_trt=$(cat ${dwi_json_path} | jq -r '.TotalReadoutTime')
-    dwi_PE=$(echo ${dwi_json} | jq -r '.PhaseEncodingDirection')
+    dwi_PE=$(cat ${dwi_json_path} | jq -r '.PhaseEncodingDirection')
     
     if [ -z ${dwi_trt} ] || [ -z ${dwi_PE} ]; then
     echo -e "${RED}no TotalReadOutTime or PhaseEncodingDirection found in dwi json file${NC}"
@@ -216,7 +219,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
             for fmap_json in ${fieldmap_folder}/*acq-dwi*dir*epi.json; do
                 if [ dwi == $(cat ${fmap_json} | grep '"IntendedFor"' | cut -d'"' -f4 | cut -d/ -f 1) ]; then
                         fmap_nii=${fmap_json%%.json}.nii.gz
-                        fmap_PE=$(echo ${fmap_json} | jq -r '.PhaseEncodingDirection')
+                        fmap_PE=$(cat ${fmap_json} | jq -r '.PhaseEncodingDirection')
                         fmap_trt=$(jq -r '.TotalReadoutTime' "$fmap_json")
                     echo "${fmap_json}"
                     echo -e "${BLUE}PhaseEncodingDirection: $fmap_PE${NC}"
@@ -236,8 +239,8 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
             if [ ! -z ${fmap} ]; then 
 
-                fmap_json=${fmap_PE%%.nii.gz}.json
-                fmap_PE=$(echo ${fmap_json} | jq -r '.PhaseEncodingDirection')
+                fmap_json=${fmap%%.nii.gz}.json
+                fmap_PE=$(cat ${fmap_json} | jq -r '.PhaseEncodingDirection')
 
                 if [[ "$fmap_PE" == "j" ]]; then
                     dir=AP
@@ -260,7 +263,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
 
                     if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz ]]; then
-                                dwidenoise ${fieldmap_folder}/${fmap} \
+                                dwidenoise ${fmap} \
                                 ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif
                                 #Remove Gibbs Ringing Artifacts
                                 mrdegibbs ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif \
@@ -268,7 +271,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
                                 rm ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif
                     fi
                 else
-                        mrdegibbs ${fieldmap_folder}/${fmap} \
+                        mrdegibbs ${fmap} \
                         ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz
                         
                         
@@ -287,12 +290,12 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
     #                           One Fieldmap available 
     #----------------------------------------------------------------------
     # in case only fmap with opposite but not same PE available 
-    if [ -z ${fmap_samePE} ] || [ ! -z ${fmap_otherPE} ]; then
+    if [ -z ${fmap_samePE} ] && [ ! -z ${fmap_otherPE} ]; then
 
         echo -e "${BLUE} one fieldmap available in fmap folder${NC}"
         echo
         fmap_otherjson=${fmap_otherPE%%.nii.gz}.json
-        PE_other=$(echo ${fmap_otherjson} | jq -r '.PhaseEncodingDirection')
+        PE_other=$(cat ${fmap_otherjson} | jq -r '.PhaseEncodingDirection')
         other_trt=$(cat ${fmap_otherjson} | jq -r '.TotalReadoutTime')
 
         opposite_pe1=$(get_opposite_PE "$PE_other")
@@ -367,10 +370,10 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         # apply to multi-volume PA fieldmap
         antsApplyTransforms -d 3 -e 3 -i ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-degibbs_epi.nii.gz \
         -r ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz \
-        -t ${subj}${sessionfile}rigidreg0GenericAffine.mat \
+        -t ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}rigidreg0GenericAffine.mat \
         -o ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-warped-degibbs_epi.nii.gz -v -u int
         rm -f ${workdir}/${subj}${sessionpath}fmap/*rigidreg*
-        fslmerge -t ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}acq-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
+        fslmerge -t ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
         ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz \
         ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-warped-degibbs_epi.nii.gz
         
@@ -394,6 +397,8 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
                     echo "${PE_other_FSL} ${other_trt}" >>"${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv"
                 done
 
+        # set dwidir to samedir for later steps
+        samedir=${dwidir}
 
     elif [ ! -z ${fmap_samePE} ] && [ ! -z ${fmap_otherPE} ]; then
         #----------------------------------------------------------------------
@@ -403,8 +408,8 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         fmap_otherjson=${fmap_otherPE%%.nii.gz}.json
         fmap_samejson=${fmap_samePE%%.nii.gz}.json
 
-        PE_other=$(echo ${fmap_otherjson} | jq -r '.PhaseEncodingDirection')
-        PE_same=$(echo ${fmap_samejson} | jq -r '.PhaseEncodingDirection')
+        PE_other=$(cat ${fmap_otherjson} | jq -r '.PhaseEncodingDirection')
+        PE_same=$(cat ${fmap_samejson} | jq -r '.PhaseEncodingDirection')
         other_trt=$(cat ${fmap_otherjson} | jq -r '.TotalReadoutTime')
         same_trt=$(cat ${fmap_samejson} | jq -r '.TotalReadoutTime')
 
@@ -565,6 +570,12 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
             echo "${PE_dwi_FSL} 0.00" >>${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv
             
             cd  ${workdir}/${subj}${sessionpath}fmap/synb0/input
+            if [ -L T1.nii.gz ]; then 
+            unlink T1.nii.gz
+            unlink BRAIN.nii.gz
+            unlink acqparams.txt
+            unlink b0.nii.gz
+            fi
             ln -s  ${subj}${sessionfile}T1w.nii.gz T1.nii.gz
             ln -s  ${subj}${sessionfile}desc-brain_T1w.nii.gz BRAIN.nii.gz
             ln -s  ${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv acqparams.txt
@@ -642,7 +653,8 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         ### round bvals ###
         ###################
         cd ${workdir}/${subj}${sessionpath}dwi
-        ${scriptdir}/round_bvals.py ${sessiondir}/dwi/${subj}${sessionfile}dwi.bval
+        cp ${sessiondir}/dwi/${subj}${sessionfile}dwi.bval .
+        ${scriptdir}/round_bvals.py ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
         
         #######################
         ## create brain mask ##
@@ -654,7 +666,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         # Get the mean b-zero (un-corrected)
         dwiextract -nthreads ${SLURM_CPUS_PER_TASK} \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
-        -fslgrad ${sessiondir}/dwi/${subj}${sessionfile}*dwi.bvec ${sessiondir}/dwi/${subj}${sessionfile}dwi.bval |
+        -fslgrad ${sessiondir}/dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval |
         mrmath - mean ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz -axis 3
         
         if [[ ! -f ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz ]]; then

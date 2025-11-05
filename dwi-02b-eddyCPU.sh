@@ -9,8 +9,14 @@
 #SBATCH --qos=anw-cpu
 #SBATCH --output %x_%A.log
 
-# Written by C. Vriend - AmsUMC Jun 2024
-# c.vriend@amsterdamumc.nl
+###############################################################################
+# eddyCPU.sh
+# Author: C. Vriend - AUMC
+# Date: Nov 05 2025
+# Description: perform FSL eddy
+###############################################################################
+
+set -euo pipefail
 
 # usage instructions
 Usage() {
@@ -68,8 +74,16 @@ if [[ $missing -eq 1 ]]; then
     Usage
 fi
 
+# Helper function for colored output
+log() {
+    local color="$1"
+    shift
+    echo -e "${color}$*${NC}"
+}
+
+
 echo
-echo -e "${BLUE}chosen method for eddy: ${method}${NC}"
+log ${BLUE} "chosen method for eddy: ${method}"
 echo
 
 for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
@@ -93,11 +107,11 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         sessionfile=_${session}_
 
     fi
-    echo -e ${YELLOW}----------------------${NC}
-    echo -e ${YELLOW}running EDDY on dwi data${NC}
-    echo -e ${YELLOW}${subj}${NC}
-    echo -e ${YELLOW}${session}${NC}
-    echo -e ${YELLOW}----------------------${NC}
+    echo -e "${YELLOW}----------------------${NC}"
+    echo -e "${YELLOW}running EDDY on dwi data${NC}"
+    echo -e "${YELLOW}${subj}${NC}"
+    echo -e "${YELLOW}${session}${NC}"
+    echo -e "${YELLOW}----------------------${NC}"
 
     # inputs
     dwiworkdir=${workdir}/${subj}${sessionpath}dwi
@@ -215,7 +229,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
                 --s2v_lambda=1 --s2v_interp=trilinear >${basedir}/eddy.log
 
   	    echo
-        echo "running QC"
+        echo -e "${YELLOW}running QC${NC}"
         eddy_quad ${DWIout} \
             -idx index.txt \
             -par ${DWIacqp} \
@@ -247,7 +261,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
         # run QC
         echo
-        echo "running QC"
+        echo -e "${YELLOW}running QC${NC}"
         echo
         eddy_quad ${DWIout} \
             -idx ${basedir}/index.txt \
@@ -258,8 +272,8 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
     else
 
-        echo "proper method for eddy not set"
-        echo "exiting script"
+        echo -e "${RED}proper method for eddy not set${NC}"
+        echo -e "${RED}exiting script${NC}"
         exit
     fi
 

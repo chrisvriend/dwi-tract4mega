@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# (C) Chris Vriend - Amsterdam UMC - Okt 19 2025
-
 #SBATCH --job-name=dwi-preproc
 #SBATCH --mem=24G
 #SBATCH --partition=luna-cpu-short
@@ -14,6 +12,15 @@
 #notes:
 # memory can drastically be lowered when no synb0 is run. 
 # PM: start job with wrapper script that specifies mem?
+
+###############################################################################
+# preproc.sh
+# Author: C. Vriend - AUMC
+# Date: Nov 05 2025
+# Description: prepare dwi scan for eddy and perform topup
+###############################################################################
+
+
 usage() {
     echo "Usage: $0 -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> -c <scriptdir>"
     exit 1

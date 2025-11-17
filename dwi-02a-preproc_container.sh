@@ -41,6 +41,7 @@ bidsdir=""
 outputdir=""
 workdir=""
 subj=""
+session=""
 scriptdir=""
 # input variables
 
@@ -148,11 +149,11 @@ fi
     if [ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz ]; then
         dwidenoise ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.nii.gz \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
-        -nthreads ${threads}
+        -nthreads ${threads} -force
         #Remove Gibbs Ringing Artifacts
         mrdegibbs ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz \
-        -nthreads ${threads}
+        -nthreads ${threads} -force
         rm ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif
     fi
 
@@ -181,7 +182,7 @@ fi
 
           
             for fmap_json in ${fieldmap_folder}/*acq-dwi*dir*epi.json; do
-                if [ dwi == $(cat ${fmap_json} | grep '"IntendedFor"' | cut -d'"' -f4 | cut -d/ -f 1) ]; then
+                    if [[ $(jq -r '.IntendedFor' "${fmap_json}") == *dwi* ]]; then
                         fmap_nii=${fmap_json%%.json}.nii.gz
                         fmap_PE=$(cat ${fmap_json} | jq -r '.PhaseEncodingDirection')
                         fmap_trt=$(jq -r '.TotalReadoutTime' "$fmap_json")
@@ -228,15 +229,15 @@ fi
 
                     if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz ]]; then
                                 dwidenoise ${fmap} \
-                                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif
+                                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif -force
                                 #Remove Gibbs Ringing Artifacts
                                 mrdegibbs ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif \
-                                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz
+                                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz -force
                                 rm ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif
                     fi
                 else
                         mrdegibbs ${fmap} \
-                        ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz
+                        ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz -force
                         
                         
                 fi
@@ -639,7 +640,7 @@ fi
         ### round bvals ###
         ###################
         cd ${workdir}/${subj}${sessionpath}dwi
-        cp ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}dwi.bval .
+        rsync -av ${bidsdir}/${subj}${sessionpath}/dwi/{${subj}${sessionfile}dwi.bv*,${subj}${sessionfile}dwi.json} ${workdir}/${subj}${sessionpath}dwi/
         ${scriptdir}/round_bvals.py ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
         
         #######################
@@ -647,13 +648,13 @@ fi
         #######################
         # mean of unwarped image to allow registration
         mrmath ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-unwarped_epi.nii.gz mean \
-        ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz -axis 3
+        ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz -axis 3 -force
         
         # Get the mean b-zero (un-corrected)
         dwiextract -nthreads ${threads} \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
         -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval |
-        mrmath - mean ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz -axis 3
+        mrmath - mean ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz -axis 3 -force
         
         if [[ ! -f ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz ]]; then
             # rigid registration of nodif_epi to b0

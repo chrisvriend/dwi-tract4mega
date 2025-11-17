@@ -1,12 +1,12 @@
 #!/bin/bash
 
 #SBATCH --job-name=eddy
-#SBATCH --mem=4G
-#SBATCH --partition=luna-cpu-short
-#SBATCH --cpus-per-task=4
-#SBATCH --time=00-8:00:00
+#SBATCH --mem=6G
+#SBATCH --partition=luna-gpu-short
+#SBATCH --cpus-per-task=2
+#SBATCH --time=00-2:00:00
 #SBATCH --nice=2000
-#SBATCH --qos=anw-cpu
+#SBATCH --qos=anw
 #SBATCH --output=%x_%A.log
 
 ###############################################################################
@@ -22,9 +22,9 @@ set -euo pipefail
 Usage() {
     cat <<EOF
 
-    (C) C.Vriend - 9/7/2025 - dwi-02b-eddy.sh
+    (C) C.Vriend - 17/11/2025 - dwi-02b-eddyGPU.sh
    
-    Usage: ./dwi-02b-eddy.sh -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> [-z <session>] -m <method>
+    Usage: ./dwi-02b-eddyGPU.sh -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> [-z <session>] -m <method>
   
 EOF
     exit 1
@@ -145,7 +145,7 @@ fi
 
 case "$method" in
     default)
-        eddy \
+        eddy_cuda10.2 \
             --imain="${DWImain}" \
             --mask="${DWImask}" \
             --acqp="${DWIacqp}" \
@@ -171,7 +171,7 @@ case "$method" in
                 --imain="${DWImain}"
                 --mask="${DWImask}"
                 --acqp="${DWIacqp}"
-                --index=index.txt
+                --index="index.txt"
                 --json="${DWIjson}"
                 --bvecs="${DWIbvecs}"
                 --bvals="${DWIbvals}"
@@ -185,7 +185,7 @@ case "$method" in
                 --s2v_lambda=1 --s2v_interp=trilinear
             )
             [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            eddy "${eddy_args[@]}" --verbose
+            eddy_cuda10.2 "${eddy_args[@]}" --verbose
 
             run_qc "${DWIout}" \
                 -idx index.txt \
@@ -197,37 +197,41 @@ case "$method" in
                 -j "${DWIjson}" \
                 -v
         else
-            slspecpath=fullpath/to/slspec.tsv
-            if [[ ! -f "${slspecpath}" ]]; then
-                log "$RED" "Slice specification file not found at ${slspecpath}"
-                exit 1
-            fi
-            # eddy_args=(
-            #     --imain="${DWImain}"
-            #     --mask="${DWImask}"
-            #     --acqp="${DWIacqp}"
-            #     --index=index.txt
-            #     --slspec=${slspecpath}
-            #     --bvecs="${DWIbvecs}"
-            #     --bvals="${DWIbvals}"
-            #     --out="${DWIout}"
-            #     --topup="${topup}"
-            #     --repol --cnr_maps
-            #     --slm=linear
-            #     --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10
-            #     --niter=6 --fwhm=15,10,4,2,0,0
-            #     --mporder=8 --s2v_niter=8
-            #     --s2v_lambda=1 --s2v_interp=trilinear
-            # )
-            # [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            # eddy "${eddy_args[@]}" --verbose 
+            eddy_args=(
+                --imain="${DWImain}"
+                --mask="${DWImask}"
+                --acqp="${DWIacqp}"
+                --index="index.txt"
+                --bvecs="${DWIbvecs}"
+                --bvals="${DWIbvals}"
+                --out="${DWIout}"
+                --topup="${topup}"
+                --repol --cnr_maps
+                --slm=linear
+                --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10
+                --niter=6 --fwhm=15,10,4,2,0,0
+                --mporder=8 --s2v_niter=8 --slspec="/scratch/anw/cvriend/slspec.tsv"
+                --s2v_lambda=1 --s2v_interp=trilinear
+            )
+            [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
+            eddy_cuda10.2 "${eddy_args[@]}" --verbose
 
-            log "$RED" "Slice to volume correction not possible without SliceTime information in json"
-            exit 1
+            run_qc "${DWIout}" \
+                -idx index.txt \
+                -par "${DWIacqp}" \
+                -m "${DWImask}" \
+                -b "${DWIbvals}" \
+                -f "${topup}_fieldmap.nii.gz" \
+                -g "${DWIout}.eddy_rotated_bvecs" \
+                -s "~/my-scratch/slspec.tsv" \
+                -v
+
+            # log "$RED" "Slice to volume correction not possible without SliceTime information in json"
+            # exit 1
         fi
         ;;
     nofmap)
-        eddy \
+        eddy_cuda10.2 \
             --imain="${DWImain}" \
             --mask="${DWImask}" \
             --acqp="${DWIacqp}" \

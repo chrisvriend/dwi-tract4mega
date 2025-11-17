@@ -2,6 +2,9 @@
 
 jsonfile=$1
 
+
+export FSLOUTPUTTYPE=NIFTI_GZ
+
 usage() {
   echo "Usage: $0 <path_to_spec.json>"
   exit 1

@@ -10,10 +10,10 @@
 #SBATCH --output=%x_%A.log
 
 ###############################################################################
-# eddyCPU.sh
+# eddyGPU.sh
 # Author: C. Vriend - AUMC
 # Date: Nov 05 2025
-# Description: perform FSL eddy
+# Description: perform FSL eddy with GPU support
 ###############################################################################
 
 set -euo pipefail
@@ -24,7 +24,7 @@ Usage() {
 
     (C) C.Vriend - 17/11/2025 - dwi-02b-eddyGPU.sh
    
-    Usage: ./dwi-02b-eddyGPU.sh -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> [-z <session>] -m <method>
+    Usage: ./dwi-02b-eddyGPU.sh -o <outputdir> -w <workdir> -s <subj> [-z <session>] -m <method>
   
 EOF
     exit 1
@@ -53,7 +53,6 @@ NC='\033[0m' # No Color
 module load fsl/6.0.7.6
 
 # Initialize variables
-bidsdir=""
 outputdir=""
 workdir=""
 subj=""
@@ -61,9 +60,8 @@ session=""
 method=""
 
 # Parse command line arguments
-while getopts ":i:o:w:s:z:m:" opt; do
+while getopts ":o:w:s:z:m:" opt; do
     case $opt in
-        i) bidsdir="$OPTARG" ;;
         o) outputdir="$OPTARG" ;;
         w) workdir="$OPTARG" ;;
         s) subj="$OPTARG" ;;
@@ -75,7 +73,7 @@ while getopts ":i:o:w:s:z:m:" opt; do
 done
 
 missing=0
-for var in bidsdir outputdir workdir subj method; do
+for var in outputdir workdir subj method; do
     if [[ -z "${!var}" ]]; then
         log "$RED" "Error: -${var:0:1} ($var) is required."
         missing=1
@@ -156,7 +154,7 @@ case "$method" in
             --topup="${topup}" \
             --repol --cnr_maps \
             --slm=linear \
-            --estimate_move_by_susceptibility --verbose
+            --estimate_move_by_susceptibility --verbose > ${basedir}/eddy.log
 
         run_qc "${DWIout}" \
             -idx index.txt \
@@ -185,7 +183,7 @@ case "$method" in
                 --s2v_lambda=1 --s2v_interp=trilinear
             )
             [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            eddy_cuda10.2 "${eddy_args[@]}" --verbose
+            eddy_cuda10.2 "${eddy_args[@]}" --verbose > ${basedir}/eddy.log
 
             run_qc "${DWIout}" \
                 -idx index.txt \
@@ -201,7 +199,7 @@ case "$method" in
                 --imain="${DWImain}"
                 --mask="${DWImask}"
                 --acqp="${DWIacqp}"
-                --index="index.txt"
+                --index=index.txt
                 --bvecs="${DWIbvecs}"
                 --bvals="${DWIbvals}"
                 --out="${DWIout}"
@@ -214,7 +212,7 @@ case "$method" in
                 --s2v_lambda=1 --s2v_interp=trilinear
             )
             [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            eddy_cuda10.2 "${eddy_args[@]}" --verbose
+            eddy_cuda10.2 "${eddy_args[@]}" --verbose > ${basedir}/eddy.log
 
             run_qc "${DWIout}" \
                 -idx index.txt \
@@ -223,7 +221,7 @@ case "$method" in
                 -b "${DWIbvals}" \
                 -f "${topup}_fieldmap.nii.gz" \
                 -g "${DWIout}.eddy_rotated_bvecs" \
-                -s "~/my-scratch/slspec.tsv" \
+                -s "/scratch/anw/cvriend/slspec.tsv" \
                 -v
 
             # log "$RED" "Slice to volume correction not possible without SliceTime information in json"
@@ -241,7 +239,7 @@ case "$method" in
             --out="${DWIout}" \
             --repol --cnr_maps \
             --slm=linear \
-            --verbose >"${basedir}/eddy.log"
+            --verbose > "${basedir}/eddy.log"
 
         run_qc "${DWIout}" \
             -idx "${basedir}/index.txt" \
@@ -255,7 +253,7 @@ case "$method" in
         ;;
 esac
 
-cp eddy_*.log "${outputdir}/dwi-preproc/${subj}${sessionpath}logs/${subj}${sessionfile}eddy.log"
+cp ${basedir}/eddy.log "${outputdir}/dwi-preproc/${subj}${sessionpath}logs/${subj}${sessionfile}eddy.log"
 
 # rename output
 cd "${workdir}/${subj}${sessionpath}dwi"
@@ -268,20 +266,25 @@ cp "${subj}${sessionfile}space-dwi_desc-preproc.eddy_cnr_maps.nii.gz" \
     "${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz"
 cp "${DWIbvals}" \
     "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval"
-mv *.qc eddyqc
+if [ -d *.qc ]; then
+    mv *.qc eddyqc
+else 
+    log "$RED" "No eddy QC directory found"
+        
+fi
 
-rsync -av "${subj}${sessionfile}space-dwi*_dwi.*" "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
+rsync -av ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 
 # clean-up
-if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
-   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
-   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
-    rm -r "${workdir}/${subj}${sessionpath}"
-    rm "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*meanb0* \
-       "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*dns+degibbs*
+# if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
+#    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
+#    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
+#     rm -r "${workdir}/${subj}${sessionpath}"
+#     rm "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*meanb0* \
+#        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*dns+degibbs*
 
-    log "$GREEN" "FINISHED preprocessing ${subj}${sessionpath}"
-else
-    log "$RED" "ERROR! not all output was created successfully"
-fi
+#     log "$GREEN" "FINISHED preprocessing ${subj}${sessionpath}"
+# else
+#     log "$RED" "ERROR! not all output was created successfully"
+# fi

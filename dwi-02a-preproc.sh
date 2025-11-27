@@ -3,7 +3,7 @@
 # (C) Chris Vriend - Amsterdam UMC - Okt 19 2025
 
 #SBATCH --job-name=dwi-preproc
-#SBATCH --mem=16G
+#SBATCH --mem=24G
 #SBATCH --partition=luna-cpu-short
 #SBATCH --qos=anw-cpu
 #SBATCH --cpus-per-task=8
@@ -11,10 +11,12 @@
 #SBATCH --nice=2000
 #SBATCH --output=dwi-preproc_%A.log
 
+set -euo pipefail
+
 #notes:
 # memory can drastically be lowered when no synb0 is run. 
 # PM: start job with wrapper script that specifies mem?
-usage() {
+Usage() {
     echo "Usage: $0 -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> -c <scriptdir>"
     exit 1
 }
@@ -49,6 +51,14 @@ get_opposite_PE() {
     fi
 }
 
+# Helper function for colored output
+log() {
+    local color="$1"
+    shift
+    echo -e "${color}$*${NC}"
+}
+
+
 # Initialize variables
 bidsdir=""
 outputdir=""
@@ -77,8 +87,7 @@ for var in bidsdir outputdir workdir subj scriptdir; do
     fi
 done
 if [[ $missing -eq 1 ]]; then
-    echo "Usage: $0 -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> -c <scriptdir>"
-    exit 1
+    Usage
 fi
 
 # Check if directories exist
@@ -96,18 +105,18 @@ total_sessions=0
 done_sessions=0
 
 
-for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
+for dwidirectory in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
     total_sessions=$((total_sessions+1))
 
-    if [ ! -d ${dwidir} ]; then
+    if [ ! -d ${dwidirectory} ]; then
         
         done_sessions=$((done_sessions+1))
         continue
 
     fi
 
-    sessiondir=$(dirname ${dwidir})
+    sessiondir=$(dirname ${dwidirectory})
     
     # if [[ $(ls ${sessiondir}/dwi/*dwi.nii.gz | wc -l) -gt 1 ]]; then
     #     echo -e "${RED}ERROR! this script cannot handle >1 dwi scan per session${NC}"
@@ -125,7 +134,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         
     fi
     
-    if [[ ! -f ${dwidir}/${subj}${sessionfile}dwi.nii.gz || ! -f ${dwidir}/${subj}${sessionfile}dwi.bvec ]]; then
+    if [[ ! -f ${dwidirectory}/${subj}${sessionfile}dwi.nii.gz || ! -f ${dwidirectory}/${subj}${sessionfile}dwi.bvec ]]; then
         echo -e "${YELLOW}no dwi scan/bvec found for ${subj} - ${session}${NC}"
         done_sessions=$((done_sessions+1))
         continue
@@ -137,6 +146,10 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
     echo -e ${YELLOW}${subj}${NC}
     echo -e ${YELLOW}${session}${NC}
     echo -e ${YELLOW}----------------------${NC}
+
+
+    fmap_samePE=()
+    fmap_otherPE=()
     
     if [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz ]] &&
     [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval ]] &&
@@ -193,6 +206,14 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
     # write dwi acqparams
     echo "${PE_dwi_FSL} ${dwi_trt}" >${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}acq-dwi_desc-acqparams.tsv
     
+     ###################
+        ### round bvals ###
+        ###################
+        cd ${workdir}/${subj}${sessionpath}dwi
+        rsync -av ${bidsdir}/${subj}${sessionpath}/dwi/{${subj}${sessionfile}dwi.bv*,${subj}${sessionfile}dwi.json} ${workdir}/${subj}${sessionpath}dwi/
+        chmod u+rw ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
+        ${scriptdir}/round_bvals.py ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
+
     #----------------------------------------------------------------------
     #                           Check for fieldmaps
     #----------------------------------------------------------------------
@@ -289,7 +310,10 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
     #                           One Fieldmap available 
     #----------------------------------------------------------------------
     # in case only fmap with opposite but not same PE available 
-    if [ -z ${fmap_samePE} ] && [ ! -z ${fmap_otherPE} ]; then
+#    if [ -z ${fmap_samePE} ] && [ ! -z ${fmap_otherPE} ]; then
+    if [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -ne 0 ]; then
+    
+
 
         echo -e "${BLUE} one fieldmap available in fmap folder${NC}"
         echo
@@ -349,7 +373,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         # extract mean b0 from dwi
         dwiextract -nthreads ${SLURM_CPUS_PER_TASK} \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
-        -fslgrad ${sessiondir}/dwi/${subj}${sessionfile}*dwi.bvec ${sessiondir}/dwi/${subj}${sessionfile}*dwi.bval |
+        -fslgrad ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bval |
         mrmath - mean ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz -axis 3
         
         # create mean b0 from PA fieldmap
@@ -399,7 +423,9 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         # set dwidir to samedir for later steps
         samedir=${dwidir}
 
-    elif [ ! -z ${fmap_samePE} ] && [ ! -z ${fmap_otherPE} ]; then
+    #elif [ ! -z ${fmap_samePE} ] && [ ! -z ${fmap_otherPE} ]; then
+    elif [ ${#fmap_samePE[@]} -ne 0 ] && [ ${#fmap_otherPE[@]} -ne 0 ]; then
+
         #----------------------------------------------------------------------
         #                           two Fieldmaps available 
         #----------------------------------------------------------------------
@@ -520,18 +546,82 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
                 ${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv \
                 ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
                 
-    elif [ -z ${fmap_samePE} ] && [ -z ${fmap_otherPE} ]; then
+   # elif [ -z ${fmap_samePE} ] && [ -z ${fmap_otherPE} ]; then
+    elif [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -eq 0 ]; then          
+
+         #----------------------------------------------------------------------
+        #                          ANTs nonlinear registration to create fieldmap 
+        #----------------------------------------------------------------------
+        # if antsfallback==yes; then
+
+        #      echo -e "${BLUE}no fmaps found - creating one using ANTs nonlin reg${NC}"
+            
+        #     mkdir -p "${workdir}/${subj}${sessionpath}fmap/ants/" \
+        
+        #   if [[ "$dwi_PE" == "j" ]]; then
+        #             dwidir=AP
+         #           PE_AXIS=y
+        #         elif [[ "$dwi_PE" == "j-" ]]; then
+        #             dwidir=PA
+         #           PE_AXIS=y
+        #         elif [[ "$dwi_PE" == "i" ]]; then
+        #             dwidir=LR
+         #           PE_AXIS=x
+        #         elif [[ "$dwi_PE" == "i-" ]]; then
+        #             dwidir=RL
+         #           PE_AXIS=x
+        #         elif [[ "$dwi_PE" == "k" ]]; then
+        #             dwidir=IS
+        #           PE_AXIS=z
+        #         elif [[ "$dwi_PE" == "k-" ]]; then
+        #             dwidir=SI
+         #           PE_AXIS=z
+        #         else
+        #             echo "Unknown Phase Encoding Direction"
+        #         fi
+
+
+
+        #     # extract b0 vol from dwi
+        #     dwiextract -nthreads ${SLURM_CPUS_PER_TASK} \
+        #     ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
+        #     -fslgrad ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bvec \
+        #     ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bval |
+        #     mrconvert - -coord 3 0 \
+        #     ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz -force
+            
+             # apptainer run --cleanenv ${synthstrippath} \
+#             -i ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz \
+#             -o ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-brain_b0_epi.nii.gz \
+#             --mask ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz    
+
+
+        #     rsync -a ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
+        #     ${workdir}/${subj}${sessionpath}fmap/ants/
+
+        #     N4biasFieldCorrection -d 3 \
+        #     -i ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}T1w.nii.gz \
+        #     -o ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}desc-n4_T1w.nii.gz
+            
+        #  # skull-strip T1w for ants input
+#             apptainer run --cleanenv ${synthstrippath} \
+#             -i ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}desc-n4_T1w.nii.gz \
+#             -o ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}desc-brain_T1w.nii.gz \
+#             --mask ${workdir}/${subj}${sessionpath}fmap/ants/${subj}${sessionfile}space-T1w_desc-brain_mask.nii.gz
+            
+
+
+
+        # else : fi
+
+
         #----------------------------------------------------------------------
         #                           Syn b0 (no fieldmaps available) 
         #----------------------------------------------------------------------
-            
-    
+               
             echo -e "${BLUE}no fmaps found - creating syn b0 for topup${NC}"
             
-            mkdir -p "${workdir}/${subj}${sessionpath}fmap/synb0/tmp" \
-            "${workdir}/${subj}${sessionpath}fmap/synb0/input" \
-            "${workdir}/${subj}${sessionpath}fmap/synb0/output"
-            
+                mkdir -p "${workdir}/${subj}${sessionpath}fmap/"
 
                 if [[ "$dwi_PE" == "j" ]]; then
                     dwidir=AP
@@ -549,25 +639,61 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
                     echo "Unknown Phase Encoding Direction"
                 fi
 
-            # extract first b0 vol from dwi
+                PE_other=$(get_opposite_PE "$dwi_PE")
+
+                if [[ "$PE_other" == "j" ]]; then
+                    otherdir=AP
+                elif [[ "$PE_other" == "j-" ]]; then
+                    otherdir=PA
+                elif [[ "$PE_other" == "i" ]]; then
+                    otherdir=LR
+                elif [[ "$PE_other" == "i-" ]]; then
+                    otherdir=RL
+                elif [[ "$PE_other" == "k" ]]; then
+                    otherdir=IS
+                elif [[ "$PE_other" == "k-" ]]; then
+                    otherdir=SI
+                else
+                    echo "Unknown Phase Encoding Direction"
+                fi
+              
+            # write TRT to refparams file
+            echo "${PE_dwi_FSL} ${dwi_trt}" > ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv
+            echo "${PE_dwi_FSL} 0.00" >> ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv
+                
+
+            if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz  ]]; then
+
+             
+            mkdir -p "${workdir}/${subj}${sessionpath}fmap/synb0/tmp" \
+            "${workdir}/${subj}${sessionpath}fmap/synb0/input" \
+            "${workdir}/${subj}${sessionpath}fmap/synb0/output"
+
+            cp ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv \
+            ${workdir}/${subj}${sessionpath}fmap/synb0/input/ 
+
+            # extract b0 vol from dwi
             dwiextract -nthreads ${SLURM_CPUS_PER_TASK} \
             ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
-            -fslgrad ${sessiondir}/dwi/${subj}${sessionfile}*dwi.bvec ${sessiondir}/dwi/${subj}${sessionfile}*dwi.bval |
+            -fslgrad ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bvec \
+            ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bval |
             mrconvert - -coord 3 0 \
-            ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz
+            ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz -force
             
-            
-            rsync -a ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
+                        rsync -a ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
             ${workdir}/${subj}${sessionpath}fmap/synb0/input
-            apptainer run --cleanenv ${synthstrippath} \
+
+            N4BiasFieldCorrection -d 3 \
             -i ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}T1w.nii.gz \
+            -o ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-n4_T1w.nii.gz   
+
+            # skull-strip T1w for synb0 input
+            apptainer run --cleanenv ${synthstrippath} \
+            -i ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-n4_T1w.nii.gz \
             -o ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-brain_T1w.nii.gz \
             --mask ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}space-T1w_desc-brain_mask.nii.gz
             
-            
-            echo "${PE_dwi_FSL} ${dwi_trt}" >${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv
-            echo "${PE_dwi_FSL} 0.00" >>${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv
-            
+          
             cd  ${workdir}/${subj}${sessionpath}fmap/synb0/input
             if [ -L T1.nii.gz ]; then 
             unlink T1.nii.gz
@@ -575,39 +701,49 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
             unlink acqparams.txt
             unlink b0.nii.gz
             fi
-            ln -s  ${subj}${sessionfile}T1w.nii.gz T1.nii.gz
+            ln -s  ${subj}${sessionfile}desc-n4_T1w.nii.gz T1.nii.gz
             ln -s  ${subj}${sessionfile}desc-brain_T1w.nii.gz BRAIN.nii.gz
-            ln -s  ${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv acqparams.txt
+            ln -s  ${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv acqparams.txt
             ln -s  ${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz b0.nii.gz
             
             
             #Run Synb0-DISCO for fieldmap-free distortion correction
-            if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz ]] || \
-            [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz ]]; then
-                apptainer run -e -B ${workdir}/${subj}${sessionpath}fmap/synb0/tmp:/tmp \
-                -B ${workdir}/${subj}${sessionpath}fmap/synb0/input:/INPUTS \
-                -B ${workdir}/${subj}${sessionpath}fmap/synb0/output:/OUTPUTS \
-                -B ${FSlicense}:/extra/freesurfer/license.txt \
-                ${synbpath} 
+           
+
+                if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz ]] || \
+                [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz ]]; then
+                    apptainer run -e -B ${workdir}/${subj}${sessionpath}fmap/synb0/tmp:/tmp \
+                    -B ${workdir}/${subj}${sessionpath}fmap/synb0/input:/INPUTS \
+                    -B ${workdir}/${subj}${sessionpath}fmap/synb0/output:/OUTPUTS \
+                    -B ${FSlicense}:/extra/freesurfer/license.txt \
+                    ${synbpath} --notopup
+                    
+                fi
                 
+                fslmerge -t ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \
+                ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz \
+                ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz &&
+                
+                mv ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \
+                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz
+              
+                
+                if [[ -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz ]]; then
+                    #clean-up
+                    rm -r ${workdir}/${subj}${sessionpath}fmap/synb0/
+                else
+                    echo -e "${RED}something went wrong with synb0${NC}"
+                    continue
+                fi
+
             fi
-            
-            fslmerge -t ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \
-            ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz \
-            ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz &&
-            
-            mv ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \
-            ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz
-            mv ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv \
-            ${workdir}/${subj}${sessionpath}fmap/
-            
-            if [[ -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz ]]; then
-                #clean-up
-                rm -r ${workdir}/${subj}${sessionpath}fmap/synb0/
-            else
-                echo -e "${RED}something went wrong with synb0${NC}"
-                continue
-            fi
+            samedir=${dwidir}
+
+            cd  ${workdir}/${subj}${sessionpath}fmap
+              rsync -av ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
+                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv \
+                ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
+    
     fi
         
     #----------------------------------------------------------------------
@@ -648,12 +784,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
             
         fi
         
-        ###################
-        ### round bvals ###
-        ###################
-        cd ${workdir}/${subj}${sessionpath}dwi
-        rsync -av ${bidsdir}/${subj}${sessionpath}/dwi/{${subj}${sessionfile}dwi.bv*,${subj}${sessionfile}dwi.json} ${workdir}/${subj}${sessionpath}dwi/
-        ${scriptdir}/round_bvals.py ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
+       
         
         #######################
         ## create brain mask ##
@@ -666,7 +797,7 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         dwiextract -nthreads ${SLURM_CPUS_PER_TASK} \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
         -fslgrad ${sessiondir}/dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval |
-        mrmath - mean ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz -axis 3
+        mrmath - mean ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz -axis 3 -force
         
         if [[ ! -f ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz ]]; then
             # rigid registration of nodif_epi to b0
@@ -682,9 +813,13 @@ for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
             --mask ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz
         fi
     
-        
-    
-        
+        cd ${workdir}/${subj}${sessionpath}fmap
+
+        rsync -av ${subj}${sessionfile}space-dwi_desc-unwarped_epi* \
+        ${subj}${sessionfile}space-dwi_desc-topup_fieldmap* \
+        ${subj}${sessionfile}space-dwi_desc-topup* \
+        ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
+   
     
 done
 

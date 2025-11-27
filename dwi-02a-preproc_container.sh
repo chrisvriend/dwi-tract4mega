@@ -498,9 +498,8 @@ fi
     
             echo -e "${BLUE}no fmaps found - creating syn b0 for topup${NC}"
             
-            mkdir -p "${workdir}/${subj}${sessionpath}fmap/synb0/tmp" \
-            "${workdir}/${subj}${sessionpath}fmap/synb0/input" \
-            "${workdir}/${subj}${sessionpath}fmap/synb0/output"
+            mkdir -p "${workdir}/${subj}${sessionpath}fmap/"
+
             
 
                 if [[ "$dwi_PE" == "j" ]]; then
@@ -538,64 +537,91 @@ fi
                 fi
 
 
-            # extract first b0 vol from dwi
-            dwiextract -nthreads ${threads} \
-            ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
-            -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bval |
-            mrconvert - -coord 3 0 \
-            ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz -force
-            
-            
-            rsync -a ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
-            ${workdir}/${subj}${sessionpath}fmap/synb0/input
-            mri_synthstrip \
-            -i ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}T1w.nii.gz \
-            -o ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-brain_T1w.nii.gz \
-            --mask ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}space-T1w_desc-brain_mask.nii.gz
-            
-            
-            echo "${PE_dwi_FSL} ${dwi_trt}" >${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv
-            echo "${PE_dwi_FSL} 0.00" >>${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv
-            
-            cd  ${workdir}/${subj}${sessionpath}fmap/synb0/input
-            if [ -L T1.nii.gz ]; then 
-            unlink T1.nii.gz
-            unlink BRAIN.nii.gz
-            unlink acqparams.txt
-            unlink b0.nii.gz
-            fi
-            ln -s  ${subj}${sessionfile}T1w.nii.gz T1.nii.gz
-            ln -s  ${subj}${sessionfile}desc-brain_T1w.nii.gz BRAIN.nii.gz
-            ln -s  ${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv acqparams.txt
-            ln -s  ${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz b0.nii.gz
-            
-            
-            #Run Synb0-DISCO for fieldmap-free distortion correction
-            if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz ]] || \
-            [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz ]]; then
-                echo " test" 
-                synb0-disco --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
-                --output ${workdir}/${subj}${sessionpath}fmap/synb0/output \
-               
+            # write TRT to refparams file
+            echo "${PE_dwi_FSL} ${dwi_trt}" > ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv
+            echo "${PE_dwi_FSL} 0.00" >> ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv
                 
-            fi
+
+            if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz  ]]; then
+
+             
+                mkdir -p "${workdir}/${subj}${sessionpath}fmap/synb0/tmp" \
+                "${workdir}/${subj}${sessionpath}fmap/synb0/input" \
+                "${workdir}/${subj}${sessionpath}fmap/synb0/output"
+
+                cp ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv \
+                    ${workdir}/${subj}${sessionpath}fmap/synb0/input/ 
+
+                # extract first b0 vol from dwi
+                dwiextract -nthreads ${threads} \
+                ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
+                -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bval |
+                mrconvert - -coord 3 0 \
+                ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz -force
+                
+                
+                rsync -a ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
+                ${workdir}/${subj}${sessionpath}fmap/synb0/input
+
+                N4BiasFieldCorrection -d 3 \
+                -i ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}T1w.nii.gz \
+                -o ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-n4_T1w.nii.gz   
+
+                mri_synthstrip \
+                -i ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-n4_T1w.nii.gz \
+                -o ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-brain_T1w.nii.gz \
+                --mask ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}space-T1w_desc-brain_mask.nii.gz
+                
+   
             
-            fslmerge -t ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \
-            ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz \
-            ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz &&
+                cd  ${workdir}/${subj}${sessionpath}fmap/synb0/input
+                if [ -L T1.nii.gz ]; then 
+                    unlink T1.nii.gz
+                    unlink BRAIN.nii.gz
+                    unlink acqparams.txt
+                    unlink b0.nii.gz
+                fi
+                ln -s  ${subj}${sessionfile}desc-n4_T1w.nii.gz T1.nii.gz
+                ln -s  ${subj}${sessionfile}desc-brain_T1w.nii.gz BRAIN.nii.gz
+                ln -s  ${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv acqparams.txt
+                ln -s  ${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz b0.nii.gz
+                
+                
+                #Run Synb0-DISCO for fieldmap-free distortion correction
+                if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz ]] || \
+                [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz ]]; then
+                    echo " test" 
+                    synb0-disco --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
+                    --output ${workdir}/${subj}${sessionpath}fmap/synb0/output --notopup
+                     
+                fi
+                
+                fslmerge -t ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \
+                ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz \
+                ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz &&
+                
+                mv ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \
+                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz
+                mv ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv \
+                ${workdir}/${subj}${sessionpath}fmap/
+                
+
+                if [[ -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz ]]; then
+                    #clean-up
+                    rm -r ${workdir}/${subj}${sessionpath}fmap/synb0/
+                else
+                    echo -e "${RED}something went wrong with synb0${NC}"
+                    exit 1
+                fi
+            fi 
+
+            samedir=${dwidir}
             
-            mv ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \
-            ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz
-            mv ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv \
-            ${workdir}/${subj}${sessionpath}fmap/
-            
-            if [[ -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz ]]; then
-                #clean-up
-                rm -r ${workdir}/${subj}${sessionpath}fmap/synb0/
-            else
-                echo -e "${RED}something went wrong with synb0${NC}"
-                continue
-            fi
+            cd  ${workdir}/${subj}${sessionpath}fmap
+              rsync -a ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
+                ${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv \
+                ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
+
     fi
         
     #----------------------------------------------------------------------
@@ -641,6 +667,7 @@ fi
         ###################
         cd ${workdir}/${subj}${sessionpath}dwi
         rsync -av ${bidsdir}/${subj}${sessionpath}/dwi/{${subj}${sessionfile}dwi.bv*,${subj}${sessionfile}dwi.json} ${workdir}/${subj}${sessionpath}dwi/
+        chmod u+rw ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
         ${scriptdir}/round_bvals.py ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
         
         #######################
@@ -670,6 +697,12 @@ fi
             --mask ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz
         fi
     
+        cd ${workdir}/${subj}${sessionpath}fmap
+
+        rsync -av ${subj}${sessionfile}space-dwi_desc-unwarped_epi* \
+        ${subj}${sessionfile}space-dwi_desc-topup_fieldmap* \
+        ${subj}${sessionfile}space-dwi_desc-topup* \
+        ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
         
 echo "Preprocessing complete."
 exit 0

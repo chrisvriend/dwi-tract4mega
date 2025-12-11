@@ -9,13 +9,15 @@
 
 set -euo pipefail
 
+
+
 # usage instructions
 Usage() {
     cat <<EOF
 
     (C) C.Vriend - 9/7/2025 - dwi-02b-eddy.sh
    
-    Usage: ./dwi-02b-eddy.sh -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> [-z <session>] -m <method>
+    Usage: ./dwi-02b-eddyCPU_container.sh -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> [-z <session>] -m <method> -t <nthreads>
   
 EOF
     exit 1
@@ -49,9 +51,10 @@ workdir=""
 subj=""
 session=""
 method=""
+nthreads=""
 
 # Parse command line arguments
-while getopts ":i:o:w:s:z:m:" opt; do
+while getopts ":i:o:w:s:z:m:t:" opt; do
     case $opt in
         i) bidsdir="$OPTARG" ;;
         o) outputdir="$OPTARG" ;;
@@ -59,15 +62,16 @@ while getopts ":i:o:w:s:z:m:" opt; do
         s) subj="$OPTARG" ;;
         z) session="$OPTARG" ;;
         m) method="$OPTARG" ;;
+        t) nthreads="$OPTARG" ;;
         \?) log "$RED" "Invalid option: -$OPTARG"; exit 1 ;;
         :) log "$RED" "Option -$OPTARG requires an argument."; exit 1 ;;
     esac
 done
 
 missing=0
-for var in bidsdir outputdir workdir subj method; do
+for var in bidsdir outputdir workdir subj method nthreads; do
     if [[ -z "${!var}" ]]; then
-        log "$RED" "Error: -${var:0:1} ($var) is required."
+        log "$RED" "Error: $var is required."
         missing=1
     fi
 done
@@ -75,7 +79,6 @@ if [[ $missing -eq 1 ]]; then
     Usage
 fi
 
-log "$BLUE" "chosen method for eddy: ${method}"
 
 # Set session path/file
 if [[ -z "${session}" ]]; then
@@ -86,8 +89,22 @@ else
     sessionfile="_${session}_"
 fi
 
+# Check if eddy already completed
+if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" ] &&
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
+
+    log "$GREEN" "Eddy already completed for ${subj} | ${session}"
+    log "$GREEN" "skipping"
+    echo
+    exit 0    
+
+fi
 log "$YELLOW" "----------------------"
 log "$YELLOW" "running EDDY on dwi data"
+log "$YELLOW" "w/ eddy method: ${method}"
+log "$YELLOW" "& nthreads: ${nthreads}"
 log "$YELLOW" "${subj}"
 log "$YELLOW" "${session}"
 log "$YELLOW" "----------------------"
@@ -104,7 +121,7 @@ topup="${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-
 DWIout="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc"
 
 basedir="$(dirname "${DWImain}")"
-cd "${basedir}"
+cd ${basedir}
 
 # Check required files
 required_files=(
@@ -135,7 +152,28 @@ fi
 
 case "$method" in
     default)
-        eddy \
+        eddy diffusion \
+            --imain="${DWImain}" \
+            --mask="${DWImask}" \
+            --acqp="${DWIacqp}" \
+            --index=index.txt \
+            --bvecs="${DWIbvecs}" \
+            --bvals="${DWIbvals}" \
+            --out="${DWIout}" \
+            --topup="${topup}" \
+            --repol --cnr_maps \
+            --verbose \
+            --nthr=${nthreads} >"${basedir}/eddy.log"
+
+        run_qc "${DWIout}" \
+            -idx index.txt \
+            -par "${DWIacqp}" \
+            -m "${DWImask}" \
+            -b "${DWIbvals}" \
+            -f "${topup}_fieldmap.nii.gz"
+        ;;
+    slmlinear)
+        eddy diffusion \
             --imain="${DWImain}" \
             --mask="${DWImask}" \
             --acqp="${DWIacqp}" \
@@ -146,7 +184,8 @@ case "$method" in
             --topup="${topup}" \
             --repol --cnr_maps \
             --slm=linear \
-            --estimate_move_by_susceptibility --verbose
+            --verbose \
+            --nthr=${nthreads} >"${basedir}/eddy.log"
 
         run_qc "${DWIout}" \
             -idx index.txt \
@@ -172,10 +211,11 @@ case "$method" in
                 --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10
                 --niter=6 --fwhm=15,10,4,2,0,0
                 --mporder=8 --s2v_niter=8 --json="${DWIjson}"
-                --s2v_lambda=1 --s2v_interp=trilinear
+                --s2v_lambda=1 --s2v_interp=trilinear 
+                --nthr=${nthreads}
             )
             [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            eddy "${eddy_args[@]}" --verbose >"${basedir}/eddy.log"
+            eddy diffusion "${eddy_args[@]}" --verbose >"${basedir}/eddy.log"
 
             run_qc "${DWIout}" \
                 -idx index.txt \
@@ -192,7 +232,7 @@ case "$method" in
         fi
         ;;
     nofmap)
-        eddy \
+        eddy diffusion \
             --imain="${DWImain}" \
             --mask="${DWImask}" \
             --acqp="${DWIacqp}" \
@@ -202,6 +242,7 @@ case "$method" in
             --out="${DWIout}" \
             --repol --cnr_maps \
             --slm=linear \
+            --nthr=${nthreads} \
             --verbose >"${basedir}/eddy.log"
 
         run_qc "${DWIout}" \
@@ -216,7 +257,7 @@ case "$method" in
         ;;
 esac
 
-cp eddy_*.log "${outputdir}/dwi-preproc/${subj}${sessionpath}logs/${subj}${sessionfile}eddy.log"
+cp ${basedir}/eddy.log "${outputdir}/dwi-preproc/${subj}${sessionpath}log/${subj}${sessionfile}eddy.log"
 
 # rename output
 cd "${workdir}/${subj}${sessionpath}dwi"
@@ -231,14 +272,16 @@ cp "${DWIbvals}" \
     "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval"
 mv *.qc eddyqc
 
-rsync -av "${subj}${sessionfile}space-dwi*_dwi.*" "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
+rsync -av ${subj}${sessionfile}*acqparams.tsv ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 
 # clean-up
 if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" ] &&
    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
-    rm -r "${workdir}/${subj}${sessionpath}"
+    
+    rm ${workdir}/${subj}${sessionpath}dwi/*desc-preproc* 
     rm "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*meanb0* \
        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*dns+degibbs*
 

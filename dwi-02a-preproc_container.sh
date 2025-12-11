@@ -8,14 +8,13 @@
 ###############################################################################
 set -euo pipefail
 
+#export PATH=/opt/c3d/bin:$PATH
+export FSLOUTPUTTYPE=NIFTI_GZ
 
-usage() {
-    echo "Usage: $0 -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> -c <scriptdir>"
+Usage() {
+    echo "Usage: $0 -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> -c <scriptdir> -t <nthreads> [-z <session>]"
     exit 1
 }
-
-threads=8
-
 
 # Define color variables
 RED='\033[0;31m'
@@ -43,10 +42,11 @@ workdir=""
 subj=""
 session=""
 scriptdir=""
+nthreads=""
 # input variables
 
 # Parse command line arguments
-while getopts ":i:o:w:s:c:z:" opt; do
+while getopts ":i:o:w:s:c:z:t:" opt; do
     case $opt in
         i) bidsdir="$OPTARG" ;;
         o) outputdir="$OPTARG" ;;
@@ -54,20 +54,20 @@ while getopts ":i:o:w:s:c:z:" opt; do
         s) subj="$OPTARG" ;;
         z) session="$OPTARG" ;;
         c) scriptdir="$OPTARG" ;;
+        t) nthreads="$OPTARG" ;;
         \?) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
         :) echo "Option -$OPTARG requires an argument." >&2; exit 1 ;;
     esac
 done
 missing=0
-for var in bidsdir outputdir workdir subj scriptdir; do
+for var in bidsdir outputdir workdir subj scriptdir nthreads; do
     if [[ -z "${!var}" ]]; then
-        echo "Error: -${var:0:1} ($var) is required."
+        echo "Error: $var is required."
         missing=1
     fi
 done
 if [[ $missing -eq 1 ]]; then
-    echo "Usage: $0 -i <bidsdir> -o <outputdir> -w <workdir>  -c <scriptdir> -s <subj> [-z <session>]"
-    exit 1
+    Usage
 fi
 
 # Check if directories exist
@@ -111,13 +111,13 @@ fi
     [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval ]] &&
     [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec ]]; then
         echo -e "${GREEN}${subj}${sessionfile} already preprocessed with eddy${NC}"
-        exit 1
+        exit 0
     fi
     
     
     mkdir -p "${workdir}/${subj}${sessionpath}dwi"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
-    mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}logs"
+    mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}log"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}fmap"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
     
@@ -149,11 +149,11 @@ fi
     if [ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz ]; then
         dwidenoise ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.nii.gz \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
-        -nthreads ${threads} -force
+        -nthreads ${nthreads} -force
         #Remove Gibbs Ringing Artifacts
         mrdegibbs ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz \
-        -nthreads ${threads} -force
+        -nthreads ${nthreads} -force
         rm ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif
     fi
 
@@ -200,8 +200,11 @@ fi
                 fi
             done
 
-        for fmap in "${fmap_samePE}" "${fmap_otherPE}"; do
+        for fmap in "${fmap_samePE:-empty}" "${fmap_otherPE:-empty}"; do
 
+            if [[ "$fmap" == "empty" ]]; then
+            continue
+            fi  
             if [ ! -z ${fmap} ]; then 
 
                 fmap_json=${fmap%%.nii.gz}.json
@@ -315,7 +318,7 @@ fi
 
 
         # extract mean b0 from dwi
-        dwiextract -nthreads ${threads} \
+        dwiextract -nthreads ${nthreads} \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
         -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bval |
         mrmath - mean ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz -axis 3
@@ -333,14 +336,16 @@ fi
         # rigid registration of dwi mean b0 (AP) and PA fieldmap
         antsRegistrationSyN.sh -d 3 -m ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-temp_epi.nii.gz \
         -f ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz \
-        -o ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}rigidreg -t r -n ${threads} -p d
+        -o ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}rigidreg -t r -n ${nthreads} -p d
         # apply to multi-volume PA fieldmap
         antsApplyTransforms -d 3 -e 3 -i ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-degibbs_epi.nii.gz \
         -r ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz \
         -t ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}rigidreg0GenericAffine.mat \
         -o ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-warped-degibbs_epi.nii.gz -v -u int
         rm -f ${workdir}/${subj}${sessionpath}fmap/*rigidreg*
-        fslmerge -t ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-4topup_epi.nii.gz \
+
+        # merge dwi mean b0 and registered PA fieldmap
+        fslmerge -t ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
         ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz \
         ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-warped-degibbs_epi.nii.gz
         
@@ -359,13 +364,13 @@ fi
 
                 # write TRT to refparams file
                 cd ${workdir}/${subj}${sessionpath}fmap
-                echo "${PE_dwi_FSL} ${dwi_trt}" >${subj}${sessionfile}dir-${dwidir}_desc-refparams.tsv
+                echo "${PE_dwi_FSL} ${dwi_trt}" >${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv
                 for ((i = 0; i < $(fslnvols ${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-degibbs_epi.nii.gz); i++)); do
-                    echo "${PE_other_FSL} ${other_trt}" >>"${subj}${sessionfile}dir-${dwidir}_desc-refparams.tsv"
+                    echo "${PE_other_FSL} ${other_trt}" >>"${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv"
                 done
 
         # set dwidir to samedir for later steps
-        samedir=${bidsdir}/${subj}${sessionpath}
+        samedir=${dwidir}
 
     #elif [ ! -z ${fmap_samePE} ] && [ ! -z ${fmap_otherPE} ]; then
     elif [ ${#fmap_samePE[@]} -ne 0 ] && [ ${#fmap_otherPE[@]} -ne 0 ]; then
@@ -489,6 +494,7 @@ fi
                 ${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv \
                 ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
 
+
     elif [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -eq 0 ]; then          
    # elif [ -z ${fmap_samePE} ] && [ -z ${fmap_otherPE} ]; then
         #----------------------------------------------------------------------
@@ -553,7 +559,7 @@ fi
                     ${workdir}/${subj}${sessionpath}fmap/synb0/input/ 
 
                 # extract first b0 vol from dwi
-                dwiextract -nthreads ${threads} \
+                dwiextract -nthreads ${nthreads} \
                 ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
                 -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bval |
                 mrconvert - -coord 3 0 \
@@ -590,8 +596,8 @@ fi
                 #Run Synb0-DISCO for fieldmap-free distortion correction
                 if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz ]] || \
                 [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz ]]; then
-                    echo " test" 
-                    synb0-disco --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
+                   
+                    synb0 --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
                     --output ${workdir}/${subj}${sessionpath}fmap/synb0/output --notopup
                      
                 fi
@@ -658,7 +664,7 @@ fi
             --out=${subj}${sessionfile}space-dwi_desc-topup \
             --iout=${subj}${sessionfile}space-dwi_desc-unwarped_epi \
             --fout=${subj}${sessionfile}space-dwi_desc-topup_fieldmap --verbose >${subj}${sessionfile}topup.log
-            cp ${subj}${sessionfile}topup.log ${outputdir}/dwi-preproc/${subj}${sessionpath}logs
+            cp ${subj}${sessionfile}topup.log ${outputdir}/dwi-preproc/${subj}${sessionpath}log
             
         fi
         
@@ -678,7 +684,7 @@ fi
         ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz -axis 3 -force
         
         # Get the mean b-zero (un-corrected)
-        dwiextract -nthreads ${threads} \
+        dwiextract -nthreads ${nthreads} \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
         -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval |
         mrmath - mean ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz -axis 3 -force
@@ -687,13 +693,14 @@ fi
             # rigid registration of nodif_epi to b0
             antsRegistrationSyN.sh -d 3 -m ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz \
             -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz" \
-            -o ${subj}${sessionfile}rigidreg -t r -n ${threads} -p d
+            -o ${subj}${sessionfile}rigidreg -t r -n ${nthreads} -p d
             mv ${subj}${sessionfile}rigidregWarped.nii.gz ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz
             rm *rigidreg*
         fi
         if [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz ]]; then
             mri_synthstrip \
             -i ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz \
+            -o ${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz \
             --mask ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz
         fi
     

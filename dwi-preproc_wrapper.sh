@@ -5,13 +5,23 @@ jsonfile=$1
 
 export FSLOUTPUTTYPE=NIFTI_GZ
 
-usage() {
+Usage() {
   echo "Usage: $0 <path_to_spec.json>"
   exit 1
 }
+
+# Helper function for colored output
+log() {
+    local color="$1"
+    shift
+    echo -e "${color}$*${NC}"
+}
+
+
 if [[ $# -ne 1 ]]; then
-  usage
+  Usage
 fi
+
 
 # read spec.json file
 for key in $(jq -r 'keys[]' ${jsonfile}); do
@@ -27,19 +37,39 @@ for var in subj bidsdir outputdir workdir scriptdir freesurferdir eddy_method; d
   fi
 done  
 
+echo $subj
+echo $session
 
 
-# Function to allow dwi-anat and dwi-eddy to run in parallel
+echo
+log "$BLUE" "-- ------------------ --"
+log "$BLUE" "Starting DWI preprocessing for subject: ${subj} ${session}"
+log "$BLUE" "-- ------------------ --"
+echo
+
+
+
 run_03_and_02b() {
-  # 03 alleen als Freesurfer data niet bestaat
-  if [[ ! -d ${freesurferdir}/${subj} || ! -f ${freesurferdir}/${subj}/mri/aseg.mgz ]]; then
-    echo "Freesurfer directory does not contain data for ${subj}. Will run FastSurfer"
-    ${scriptdir}/dwi-03-anat2dwi_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" $1 -f "${freesurferdir}" &
-    pid1=$!
+   
+# determine nthreads
+  if (( nthreads >= 8 )); then
+    eddy_threads=4
+    anat2dwi_threads=4
+  elif (( nthreads > 4 )); then
+    eddy_threads=4
+    anat2dwi_threads=$((nthreads - 4))
+  elif (( nthreads < 2 )); then
+  log "$RED" "Error: At least 2 threads are required to run the processes."
+    exit 1 
+  else
+    eddy_threads=$nthreads
+    anat2dwi_threads=1
   fi
 
-  # 02b altijd uitvoeren
-  ${scriptdir}/dwi-02b-eddyCPU_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -m "${eddy_method}" $1 &
+ 
+  ${scriptdir}/dwi-03-anat2dwi_wFS81_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -f "${freesurferdir}" -c "${scriptdir}" -t ${anat2dwi_threads} $1 > ${outputdir}/dwi-preproc/${subj}/log/${subj}_anat2dwi_$(date +"%Y-%m-%d_%H-%M").log 2>&1 &
+  pid1=$!
+  ${scriptdir}/dwi-02b-eddyCPU_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -m "${eddy_method}"  -t ${eddy_threads} $1 > ${outputdir}/dwi-preproc/${subj}/log/${subj}_eddy_$(date +"%Y-%m-%d_%H-%M").log 2>&1 &
   pid2=$!
 
   # Wacht op beide processen (indien gestart)
@@ -50,24 +80,74 @@ run_03_and_02b() {
 }
 ###
 
+ 
+mkdir -p "${outputdir}/dwi-preproc/${subj}/log"
+
 if [[ -z "${session}" ]]; then
   # preprocess
-  ${scriptdir}/dwi-02a-preproc_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -c "${scriptdir}" -s "${subj}"
+  ${scriptdir}/dwi-02a-preproc_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -c "${scriptdir}" -s "${subj}" -t "${nthreads}" > ${outputdir}/dwi-preproc/${subj}/log/${subj}_preproc_$(date +"%Y-%m-%d_%H-%M").log
   status=$?
   if [[ $status -eq 0 ]]; then
     run_03_and_02b ""
   else
-    echo "dwi-preproc failed, skipping 03 and 02b"
+    echo "dwi-preproc failed, skipping eddy and anat2dwi"
     exit 1
   fi
 else
   # preprocess
-  ${scriptdir}/dwi-02a-preproc_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -c "${scriptdir}" -s "${subj}" -z "${session}"
+  ${scriptdir}/dwi-02a-preproc_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -c "${scriptdir}" -s "${subj}" -z ${session} -t "${nthreads}" > ${outputdir}/dwi-preproc/${subj}/log/${subj}_preproc_$(date +"%Y-%m-%d_%H-%M").log
   status=$?
   if [[ $status -eq 0 ]]; then
-    run_03_and_02b "-z \"${session}\""
+    run_03_and_02b "-z ${session}"
   else
-    echo "02a-preproc failed, skipping 03 and 02b"
+    echo "dwi-preproc failed, skipping eddy and anat2dwi"
     exit 1
   fi
 fi
+
+## run checks before clean-up
+
+
+# Set session path/file
+if [[ -z "${session}" ]]; then
+    sessionpath="/"
+    sessionfile="_"
+else
+    sessionpath="/${session}/"
+    sessionfile="_${session}_"
+fi
+
+
+    files=$(echo "
+    ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz
+    ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec
+    ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval
+    ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz
+    ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-300P7N_dseg.nii.gz
+    ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz
+    ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz
+    ")
+
+    for file in ${files}; do
+
+      if [ ! -f ${file} ]; then
+        log "${RED}" "!!!ERROR!!!"
+        log "${RED}" "a scan was not found in the output folder"
+        echo "${file}"
+        error=1
+
+      fi
+
+    done
+
+
+
+ if [[ ${error} -ne 1 ]]; then
+  log "$GREEN" "-- ------------------ --"
+  log "$GREEN" "DWI preprocessing completed for subject: ${subj} ${session}"
+  log "$GREEN" "-- ------------------ --"
+  echo
+  rm -rf ${workdir}/${subj}
+ fi
+
+

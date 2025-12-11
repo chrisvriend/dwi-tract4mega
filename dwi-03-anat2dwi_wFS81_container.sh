@@ -178,6 +178,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     fi
 
     mkdir -p "${workdir}/${subj}${sessionpath}anat"
+    mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}anat"
     mkdir -p "${workdir}/${subj}${sessionpath}xfms/"
     mkdir -p "${workdir}/${subj}/freesurfer"
 
@@ -274,8 +275,7 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
         \"Space\":\"dwi\"}" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
     done
 
-    rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc*.* ${outputdir}/dwi-preproc/${subj}/anat
-    rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc*.* ${workdir}/${subj}${sessionpath}anat/
+    rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc*.* ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/
 
 fi
  ################################################################################## 
@@ -288,7 +288,8 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     log "$YELLOW" "Relying on existing FreeSurfer run and assuming T1w to DWI registration has not been done"
     echo
     mkdir -p "${workdir}/${subj}/freesurfer/"
-    mkdir -p ${workdir}/${subj}/anat/
+    mkdir -p ${workdir}/${subj}/anat/ 
+    mkdir -p ${outputdir}/dwi-preproc/${subj}/anat
     rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
     cd "${workdir}/${subj}${sessionpath}"
 
@@ -359,7 +360,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
             "${workdir}/${subj}/anat/${subj}_res-FS_desc-wm_probseg.nii.gz" 2 1
 
         # Transfer from work directory to output directory
-        rsync -a ${workdir}/${subj}/anat/*.* "${outputdir}/dwi-preproc/${subj}/anat"
+        rsync -a ${workdir}/${subj}/anat/*.* "${outputdir}/dwi-preproc/${subj}/anat/"
     fi
 
     ###########################
@@ -409,8 +410,8 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     rsync -a ${workdir}/${subj}/anat/* "${outputdir}/dwi-preproc/${subj}/anat"
     rsync -a "${workdir}/${subj}${sessionpath}xfms" "${outputdir}/dwi-preproc/${subj}${sessionpath}"
 
-    rsync -a "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
-        "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
+    rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.* \
+        ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.* \
         "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
 
     ##################################

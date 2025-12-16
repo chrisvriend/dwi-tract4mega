@@ -90,28 +90,27 @@ else
 fi
 
 
-    # files=$(echo "
-    # ${outputdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck
-    # ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz
-    # ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec
-    # ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval
-    # ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz
-    # ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-300P7N_dseg.nii.gz
-    # ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz
-    # ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz
-    # ")
+    files=$(echo "
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-300P7N_desc-streams_connmatrix.csv
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-BNA_desc-streams_connmatrix.csv
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}rpf/${subj}${sessionfile}space-dwi_tissue-CSF_response.txt
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}rpf/${subj}${sessionfile}space-dwi_tissue-WM_response.txt
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}rpf/${subj}${sessionfile}space-dwi_tissue-GM_response.txt
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt
+    ")
 
-    # for file in ${files}; do
+    for file in ${files}; do
 
-    #   if [ ! -f ${file} ]; then
-    #     log "${RED}" "!!!ERROR!!!"
-    #     log "${RED}" "a scan was not found in the output folder"
-    #     echo "${file}"
-    #     error=1
+      if [ ! -f ${file} ]; then
+        log "${RED}" "!!!ERROR!!!"
+        log "${RED}" "a scan was not found in the output folder"
+        echo "${file}"
+        error=1
 
-    #   fi
+      fi
 
-    # done
+    done
 
 
 

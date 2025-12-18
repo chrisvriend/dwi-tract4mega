@@ -119,6 +119,10 @@ else
     exit 1
 fi
 
+log "$BLUE" "-- ------------------ --"
+log "$BLUE" "tractogram -2- connectome"
+log "$BLUE" "-- ------------------ --"
+
 ###############################################################################
 # DWI CONNECTOME GENERATION
 ###############################################################################
@@ -219,6 +223,7 @@ for atlas in BNA 300P7N; do
                 log "$RED" ""
                 log "$RED" "!ERROR! ${scalar} scalar file does not exist"
                 log "$RED" ""
+                continue
             fi
         fi
     done

@@ -114,7 +114,7 @@ fi
 # mkdir -p "${workdir}/${subj}/${sessionpath}"
 # mkdir -p "${workdir}/${subj}/${sessionpath}dwi"
 
-for folder in dwi figures logs; do
+for folder in dwi figures log; do
     mkdir -p "${outputdir}/dwi-tracto/${subj}${sessionpath}/${folder}"
 done
    
@@ -294,7 +294,8 @@ slicer "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.g
 rm "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_mask.nii.gz" \
    "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.gz"
 
-rsync -a "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}"* *sift* *mu* \
+rsync -a "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}"* \
+ ${subj}${sessionfile}space-dwi_tracto-100k.tck *sift* *mu* \
     "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi"
 rsync -a *response* "${outputdir}/dwi-tracto/${subj}${sessionpath}rpf"
 mrconvert "${subj}${sessionfile}FOD-wm-norm.mif" \

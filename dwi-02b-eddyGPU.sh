@@ -141,111 +141,80 @@ else
     STavail=0
 fi
 
+
+# Define common eddy arguments
+common_eddy_args=(
+    --imain="${DWImain}"
+    --mask="${DWImask}"
+    --acqp="${DWIacqp}"
+    --index="index.txt"
+    --bvecs="${DWIbvecs}"
+    --bvals="${DWIbvals}"
+    --out="${DWIout}"
+    --repol --cnr_maps
+    --verbose
+)
+
+# Define common run_qc arguments
+common_qc_args=(
+    -idx index.txt
+    -par "${DWIacqp}"
+    -m "${DWImask}"
+    -b "${DWIbvals}"
+)
+
 case "$method" in
     default)
-        eddy_cuda10.2 \
-            --imain="${DWImain}" \
-            --mask="${DWImask}" \
-            --acqp="${DWIacqp}" \
-            --index=index.txt \
-            --bvecs="${DWIbvecs}" \
-            --bvals="${DWIbvals}" \
-            --out="${DWIout}" \
-            --topup="${topup}" \
-            --repol --cnr_maps \
-            --slm=linear \
-            --estimate_move_by_susceptibility --verbose > ${basedir}/eddy.log
-
-        run_qc "${DWIout}" \
-            -idx index.txt \
-            -par "${DWIacqp}" \
-            -m "${DWImask}" \
-            -b "${DWIbvals}" \
-            -f "${topup}_fieldmap.nii.gz"
+        eddy_cuda10.2 "${common_eddy_args[@]}" --topup="${topup}" > "${basedir}/eddy.log"
+        run_qc "${DWIout}" "${common_qc_args[@]}" -f "${topup}_fieldmap.nii.gz"
         ;;
+    slmlinear|slmlinearsdc)
+    eddy_args=(
+        "${common_eddy_args[@]}"
+        --topup="${topup}"
+        --slm=linear
+    )
+    [[ "$method" == "slmlinearsdc" ]] && eddy_args+=(--estimate_move_by_susceptibility)
+    eddy_cuda10.2 "${eddy_args[@]}" > "${basedir}/eddy.log"
+    run_qc "${DWIout}" "${common_qc_args[@]}" -f "${topup}_fieldmap.nii.gz"
+    ;;
     volcorr|volcorrnosdc)
+        eddy_args=(
+            "${common_eddy_args[@]}"
+            --topup="${topup}"
+            --slm=linear
+            --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10
+            --niter=6 --fwhm=15,10,4,2,0,0
+            --mporder=8 --s2v_niter=8
+            --s2v_lambda=1 --s2v_interp=trilinear
+        )
+        qc_args=(
+            "${common_qc_args[@]}"
+            -f "${topup}_fieldmap.nii.gz"
+            -g "${DWIout}.eddy_rotated_bvecs"
+            -v
+        )
         if ((STavail == 1)); then
-            eddy_args=(
-                --imain="${DWImain}"
-                --mask="${DWImask}"
-                --acqp="${DWIacqp}"
-                --index="index.txt"
-                --json="${DWIjson}"
-                --bvecs="${DWIbvecs}"
-                --bvals="${DWIbvals}"
-                --out="${DWIout}"
-                --topup="${topup}"
-                --repol --cnr_maps
-                --slm=linear
-                --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10
-                --niter=6 --fwhm=15,10,4,2,0,0
-                --mporder=8 --s2v_niter=8
-                --s2v_lambda=1 --s2v_interp=trilinear
-            )
+            eddy_args+=(--json="${DWIjson}")
             [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            eddy_cuda10.2 "${eddy_args[@]}" --verbose > ${basedir}/eddy.log
-
-            run_qc "${DWIout}" \
-                -idx index.txt \
-                -par "${DWIacqp}" \
-                -m "${DWImask}" \
-                -b "${DWIbvals}" \
-                -f "${topup}_fieldmap.nii.gz" \
-                -g "${DWIout}.eddy_rotated_bvecs" \
-                -j "${DWIjson}" \
-                -v
+            eddy_cuda10.2 "${eddy_args[@]}" > "${basedir}/eddy.log"
+            run_qc "${DWIout}" "${qc_args[@]}" -j "${DWIjson}"
         else
-            eddy_args=(
-                --imain="${DWImain}"
-                --mask="${DWImask}"
-                --acqp="${DWIacqp}"
-                --index=index.txt
-                --bvecs="${DWIbvecs}"
-                --bvals="${DWIbvals}"
-                --out="${DWIout}"
-                --topup="${topup}"
-                --repol --cnr_maps
-                --slm=linear
-                --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10
-                --niter=6 --fwhm=15,10,4,2,0,0
-                --mporder=8 --s2v_niter=8 --slspec="/scratch/anw/cvriend/slspec.tsv"
-                --s2v_lambda=1 --s2v_interp=trilinear
-            )
-            [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            eddy_cuda10.2 "${eddy_args[@]}" --verbose > ${basedir}/eddy.log
-
-            run_qc "${DWIout}" \
-                -idx index.txt \
-                -par "${DWIacqp}" \
-                -m "${DWImask}" \
-                -b "${DWIbvals}" \
-                -f "${topup}_fieldmap.nii.gz" \
-                -g "${DWIout}.eddy_rotated_bvecs" \
-                -s "/scratch/anw/cvriend/slspec.tsv" \
-                -v
-
-            # log "$RED" "Slice to volume correction not possible without SliceTime information in json"
-            # exit 1
+            #eddy_args+=(--slspec="/scratch/anw/cvriend/slspec.tsv")
+            #[[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
+            #eddy_cuda10.2 "${eddy_args[@]}" > "${basedir}/eddy.log"
+            #run_qc "${DWIout}" "${qc_args[@]}" -s "/scratch/anw/cvriend/slspec.tsv"
+            log "$RED" "Slice to volume correction not possible without SliceTime information in json"
+            exit 1
         fi
         ;;
+    nofmaplin)
+        eddy_cuda10.2 "${common_eddy_args[@]}" --slm=linear > "${basedir}/eddy.log"
+        run_qc "${DWIout}" "${common_qc_args[@]}"
+        ;;
     nofmap)
-        eddy_cuda10.2 \
-            --imain="${DWImain}" \
-            --mask="${DWImask}" \
-            --acqp="${DWIacqp}" \
-            --index="${basedir}/index.txt" \
-            --bvecs="${DWIbvecs}" \
-            --bvals="${DWIbvals}" \
-            --out="${DWIout}" \
-            --repol --cnr_maps \
-            --slm=linear \
-            --verbose > "${basedir}/eddy.log"
-
-        run_qc "${DWIout}" \
-            -idx "${basedir}/index.txt" \
-            -par "${DWIacqp}" \
-            -m "${DWImask}" \
-            -b "${DWIbvals}"
+        eddy_cuda10.2 "${common_eddy_args[@]}" > "${basedir}/eddy.log"
+        run_qc "${DWIout}" "${common_qc_args[@]}"
         ;;
     *)
         log "$RED" "Proper method for eddy not set"

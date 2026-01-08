@@ -143,9 +143,31 @@ else
     STavail=0
 fi
 
+
 case "$method" in
     default)
-        eddy \
+        eddy diffusion \
+            --imain="${DWImain}" \
+            --mask="${DWImask}" \
+            --acqp="${DWIacqp}" \
+            --index=index.txt \
+            --bvecs="${DWIbvecs}" \
+            --bvals="${DWIbvals}" \
+            --out="${DWIout}" \
+            --topup="${topup}" \
+            --repol --cnr_maps \
+            --verbose \
+            --nthr=${SLURM_CPUS_PER_TASK} >"${basedir}/eddy.log"
+
+        run_qc "${DWIout}" \
+            -idx index.txt \
+            -par "${DWIacqp}" \
+            -m "${DWImask}" \
+            -b "${DWIbvals}" \
+            -f "${topup}_fieldmap.nii.gz"
+        ;;
+    slmlinear)
+        eddy diffusion \
             --imain="${DWImain}" \
             --mask="${DWImask}" \
             --acqp="${DWIacqp}" \
@@ -156,7 +178,8 @@ case "$method" in
             --topup="${topup}" \
             --repol --cnr_maps \
             --slm=linear \
-            --estimate_move_by_susceptibility --verbose
+            --verbose \
+            --nthr=${SLURM_CPUS_PER_TASK} >"${basedir}/eddy.log"
 
         run_qc "${DWIout}" \
             -idx index.txt \
@@ -181,11 +204,12 @@ case "$method" in
                 --slm=linear
                 --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10
                 --niter=6 --fwhm=15,10,4,2,0,0
-                --mporder=8 --s2v_niter=8
-                --s2v_lambda=1 --s2v_interp=trilinear
+                --mporder=8 --s2v_niter=8 --json="${DWIjson}"
+                --s2v_lambda=1 --s2v_interp=trilinear 
+                --nthr=${SLURM_CPUS_PER_TASK}
             )
             [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            eddy "${eddy_args[@]}" --verbose
+            eddy diffusion "${eddy_args[@]}" --verbose >"${basedir}/eddy.log"
 
             run_qc "${DWIout}" \
                 -idx index.txt \
@@ -197,37 +221,12 @@ case "$method" in
                 -j "${DWIjson}" \
                 -v
         else
-            slspecpath=fullpath/to/slspec.tsv
-            if [[ ! -f "${slspecpath}" ]]; then
-                log "$RED" "Slice specification file not found at ${slspecpath}"
-                exit 1
-            fi
-            # eddy_args=(
-            #     --imain="${DWImain}"
-            #     --mask="${DWImask}"
-            #     --acqp="${DWIacqp}"
-            #     --index=index.txt
-            #     --slspec=${slspecpath}
-            #     --bvecs="${DWIbvecs}"
-            #     --bvals="${DWIbvals}"
-            #     --out="${DWIout}"
-            #     --topup="${topup}"
-            #     --repol --cnr_maps
-            #     --slm=linear
-            #     --mbs_niter=10 --mbs_lambda=10 --mbs_ksp=10
-            #     --niter=6 --fwhm=15,10,4,2,0,0
-            #     --mporder=8 --s2v_niter=8
-            #     --s2v_lambda=1 --s2v_interp=trilinear
-            # )
-            # [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
-            # eddy "${eddy_args[@]}" --verbose 
-
             log "$RED" "Slice to volume correction not possible without SliceTime information in json"
             exit 1
         fi
         ;;
     nofmap)
-        eddy \
+        eddy diffusion \
             --imain="${DWImain}" \
             --mask="${DWImask}" \
             --acqp="${DWIacqp}" \
@@ -237,6 +236,7 @@ case "$method" in
             --out="${DWIout}" \
             --repol --cnr_maps \
             --slm=linear \
+            --nthr=${SLURM_CPUS_PER_TASK} \
             --verbose >"${basedir}/eddy.log"
 
         run_qc "${DWIout}" \
@@ -250,6 +250,7 @@ case "$method" in
         exit 1
         ;;
 esac
+
 
 cp eddy_*.log "${outputdir}/dwi-preproc/${subj}${sessionpath}logs/${subj}${sessionfile}eddy.log"
 
@@ -266,7 +267,7 @@ cp "${DWIbvals}" \
     "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval"
 mv *.qc eddyqc
 
-rsync -av "${subj}${sessionfile}space-dwi*_dwi.*" "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
+rsync -av ${subj}${sessionfile}*acqparams.tsv ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 
 # clean-up

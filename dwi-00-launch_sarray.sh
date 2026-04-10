@@ -9,10 +9,10 @@
 
 # input variables and paths
 scriptdir=/scratch/anw/cvriend/dwi-tractography-pipeline/dwi-tract4mega
-bidsdir=/data/anw/anw-archive/NP/imaging-samples/MDD_MOTAR
+bidsdir=/data/anw/anw-archive/NP/imaging-samples/OCD_TIPICCO
 workdir=~/my-scratch/dwi-preproc
-outputdir=/data/anw/anw-archive/NP/projects/archive_MOTAR/derivatives
-freesurferdir=/data/anw/anw-archive/NP/projects/archive_MOTAR/derivatives/freesurfer
+outputdir=/data/anw/anw-archive/NP/projects/archive_TIPICCO/derivatives
+freesurferdir=/data/anw/anw-archive/NP/projects/archive_TIPICCO/derivatives/freesurfer
 
 
 # How many in parallel?
@@ -22,14 +22,14 @@ noddi=0
 
 # Determine subjects
 cd ${bidsdir}
-ls -d sub-motar5*/ | sed 's:/.*::' > ${scriptdir}/subjects.txt
+ls -d sub-TIPICCO93*/ | sed 's:/.*::' > ${scriptdir}/subjects.txt
 nsubj=$(wc -l < ${scriptdir}/subjects.txt)
 
 cd ${scriptdir}
 
 # Submit the SLURM array
 #sbatch --array=1-${nsubj}%${simul} \
-sbatch --array=7-70%2 \
+sbatch --array=1-3%2 \
  --export=ALL,scriptdir=${scriptdir},bidsdir=${bidsdir},workdir=${workdir},outputdir=${outputdir},freesurferdir=${freesurferdir},noddi=${noddi},subjects=${scriptdir}/subjects.txt \
   ${scriptdir}/dwi-01-pipeline_sarray.sh
 

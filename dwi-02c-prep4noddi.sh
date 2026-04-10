@@ -21,8 +21,8 @@ set -euo pipefail
 ###############################################################################
 # source software
 ###############################################################################
-module load fsl/6.0.6.5
-module load ANTs/2.4.1
+module load fsl/6.0.7.6
+module load ANTs/2.5.1
 module load Anaconda3/2023.03
 synthstrippath=/scratch/anw/share-np/fmridenoiser/synthstrip.1.2.sif
 conda activate /scratch/anw/share/python-env/mrtrix
@@ -116,6 +116,14 @@ elif ((Nshells > 1)); then
         exit 1
     fi
 
+    if [[ ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/data.nii.gz \
+         && ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/bvecs \
+         && ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/bvals ]]; then
+          log "$GREEN" "NODDI preparation already done for ${subj}${sessionID}, skipping."
+          exit 0
+     fi
+     
+
     log "$GREEN" "${subj}${sessionfile} is multishell. Preparing for NODDI"
     mkdir -p "${workdir}/${subj}${sessionpath}dwi"
     rsync -a "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc"* \
@@ -147,6 +155,7 @@ elif ((Nshells > 1)); then
         "${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/bvecs"
     cp "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" \
         "${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/bvals"
+    log "$GREEN" "Preparation for NODDI fitting completed for ${subj}${sessionID}"
 else
     log "$RED" "ERROR! something went wrong with reading the bval file to determine number of shells for ${subj}${sessionpath}"
     exit 1

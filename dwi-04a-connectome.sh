@@ -107,6 +107,7 @@ if [ ! -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfil
 else 
 
     rsync -a "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc"* \
+    "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
         "${workdir}/${subj}${sessionpath}dwi"
 fi
 
@@ -292,9 +293,12 @@ tckmap "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" \
     -force -nthreads "${threads}"
 
 # QC
+mrconvert ${subj}${sessionfile}space-dwi_tissue-RGB.mif \
+ ${subj}${sessionfile}space-dwi_tissue-RGB.nii.gz
+
 fslmaths "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_dwi.nii.gz" \
     -bin "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_mask.nii.gz"
-overlay 1 0 "${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
+overlay 1 0 "${subj}${sessionfile}space-dwi_tissue-RGB.nii.gz" \
     -a "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_mask.nii.gz" 0 1 \
     "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.gz"
 slicer "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.gz" \

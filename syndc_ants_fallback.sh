@@ -25,17 +25,45 @@ set -euo pipefail
 #   * Output: derivatives/ants_syn_susc/sub-<ID>_dwi_dc.nii.gz
 # ------------------------------------------------------------------
 
-SUB="$1"
-bidsdir="$2"
-DERIV_DIR="${3:-${bidsdir}/derivatives/ants_syn_susc}"
+
+# Initialize variables
+workdir=""
+subj=""
+session=
+# input variables
+
+# Parse command line arguments
+while getopts "w:s:z:" opt; do
+    case $opt in
+        w) workdir="$OPTARG" ;;
+        s) subj="$OPTARG" ;;
+        z) session="$OPTARG" ;;
+        \?) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
+        :) echo "Option -$OPTARG requires an argument." >&2; exit 1 ;;
+    esac
+done
+missing=0
+for var in  workdir subj ; do
+    if [[ -z "${!var}" ]]; then
+        echo "Error: -${var:0:1} ($var) is required."
+        missing=1
+    fi
+done
+if [[ $missing -eq 1 ]]; then
+    Usage
+fi
+
+# Set session path/file
+if [[ -z "${session}" ]]; then
+    sessionpath="/"
+    sessionfile="_"
+else
+    sessionpath="/${session}/"
+    sessionfile="_${session}_"
+fi
+
 PE_AXIS="${PE_AXIS:-y}"         # set environment var PE_AXIS=x|y|z if different
 USE_PE_PROJECTION="${USE_PE_PROJECTION:-true}"  # set to false to skip projection
-
-# File paths (BIDS convention assumed)
-T1="${bidsdir}/${subj}/anat/${subj}_T1w.nii.gz"
-DWI="${bidsdir}/${subj}/dwi/${subj}_dwi.nii.gz"
-BVAL="${bidsdir}/${subj}/dwi/${subj}_dwi.bval"
-BVEC="${bidsdir}/${subj}/dwi/${subj}_dwi.bvec"
 
 workdir="${DERIV_DIR}/${subj}"
 mkdir -p "${workdir}"
@@ -46,48 +74,6 @@ echo "Output: ${workdir}"
 echo "Phase-encoding axis (PE_AXIS): ${PE_AXIS}"
 echo "PE projection enabled: ${USE_PE_PROJECTION}"
 
-# -------------------------
-# 1) Extract b0 (mean of b0s when available)
-# -------------------------
-echo "[1] Extracting b0 (mean of b0 volumes)"
-# prefer averaging all volumes with b=0, fallback to first vol
-if command -v fslselectvols >/dev/null 2>&1; then
-    b0_inds=$(fslselectvols -i "${DWI}" --bvals "${BVAL}" --b0 --print)
-    if [ -n "$b0_inds" ]; then
-        echo "b0 indices: $b0_inds"
-        # create a temporary file listing volumes; fslselectvols uses indices
-        fslselectvols -i "${DWI}" --vols $b0_inds "${workdir}/b0s.nii.gz"
-        fslmaths "${workdir}/b0s.nii.gz" -Tmean "${workdir}/b0_mean.nii.gz"
-        B0="${workdir}/b0_mean.nii.gz"
-    else
-        echo "No b0 indices found, extracting first volume as b0"
-        fslroi "${DWI}" "${workdir}/b0_mean.nii.gz" 0 1
-        B0="${workdir}/b0_mean.nii.gz"
-    fi
-else
-    echo "fslselectvols not available; extracting first volume"
-    fslroi "${DWI}" "${workdir}/b0_mean.nii.gz" 0 1
-    B0="${workdir}/b0_mean.nii.gz"
-fi
-
-# -------------------------
-# 2) Preprocess T1: N4 + brain extraction
-# -------------------------
-echo "[2] N4 bias correction and brain extraction on T1"
-T1_N4="${workdir}/T1_N4.nii.gz"
-T1_brain="${workdir}/T1_N4_brain.nii.gz"
-
-N4BiasFieldCorrection -d 3 -i "${T1}" -o "${T1_N4}" || { echo "N4 failed"; exit 1; }
-# simple brain extraction: try FSL BET; user can replace with HD-BET if available
-bet "${T1_N4}" "${T1_brain}" -R -f 0.5 -g 0 || echo "BET warning (check T1_brain)"
-
-# -------------------------
-# 3) Preprocess b0: bias-correct (optional) + brain extract
-# -------------------------
-echo "[3] Brain extraction of b0"
-B0_brain="${workdir}/b0_brain.nii.gz"
-# sometimes b0 has low contrast -> use bet with lower fractional intensity
-bet "${B0}" "${B0_brain}" -f 0.3 -g 0 || echo "BET on b0 warning"
 
 # -------------------------
 # 4) Run ANTs registration (fixed = T1_brain, moving = b0_brain)

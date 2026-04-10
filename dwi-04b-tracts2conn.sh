@@ -252,3 +252,13 @@ else
     log "$RED" "inspect the log file"
     exit 1
 fi
+
+# clean up
+ if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" ] &&
+       [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt" ]; then
+        log "$GREEN" "Tractography and connectome construction succesfull for ${subj} ${session:-}"
+
+        chmod -R ug+rwx ${workdir}/dwi-preproc/${subj}${sessionpath}/freesurfer/fsaverage
+        rm -rf ${workdir}/${subj}${sessionpath}
+        
+    fi

@@ -142,6 +142,9 @@
 # Load subject for this array task
 subj=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${subjects})
 
+# eddy method
+method=slmlinearsdc
+
 
 # random delay
 duration=$((RANDOM % 10 + 2))
@@ -196,15 +199,7 @@ else
     echo "Submitting preprocessing job for ${subj}"
     job_id_preproc=$(sbatch --parsable ${scriptdir}/dwi-02a-preproc.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -c ${scriptdir})
     echo "Submitting eddy job for ${subj}"
-    job_id_eddy=$(sbatch --gres=gpu:1g.10gb:1 --parsable --kill-on-invalid-dep=yes --dependency=afterok:$job_id_preproc ${scriptdir}/dwi-02b-eddyGPU.sh -w ${workdir} -o ${outputdir} -s ${subj} -z ses-t0 -m default)
-fi
 
-###########################
-##      DWI - NODDI      ##
-###########################
-if [[ ${noddi} == 1 ]]; then
-    total_sessions=0
-    done_sessions=0
     
     for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
         if [ ! -d ${dwidir} ]; then
@@ -215,51 +210,85 @@ if [[ ${noddi} == 1 ]]; then
         total_sessions=$((total_sessions+1))
         sessiondir=$(dirname ${dwidir})
         session=$(echo "${sessiondir}" | grep -oP "(?<=${subj}/).*")
-        if [ -z "${session}" ]; then
-            sessionpath=/
-            sessionfile=_
-        else
-            sessionpath=/${session}/
-            sessionfile=_${session}_
-            
-        fi
         
-        if [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-ndi_noddi.nii.gz ]] &&
-        [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-odi_noddi.nii.gz ]] &&
-        [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-isovf_noddi.nii.gz ]]; then
-            echo -e "${GREEN}${subj}${sessionfile} already preprocessed with NODDI${NC}"
-            
-            done_sessions=$((done_sessions+1))
-            continue
-        fi
+    job_id_eddy=$(sbatch --gres=gpu:1g.10gb:1 --wait --parsable --kill-on-invalid-dep=yes --dependency=afterok:$job_id_preproc ${scriptdir}/dwi-02b-eddyGPU.sh -w ${workdir} -o ${outputdir} -s ${subj} -z ${session} -m ${method})
+    
         
     done
+fi
+
+###########################
+##      DWI - NODDI      ##
+###########################
+total_sessions=0
+done_sessions=0
+if [[ ${noddi} == 1 ]]; then
+   
     
-    if [ "$total_sessions" -gt 0 ] && [ "$done_sessions" -eq "$total_sessions" ]; then
-        echo "All sessions already have NODDI output for ${subj}."
-    else
+    for dwidir in ${bidsdir}/${subj}/{,ses*/}dwi; do
+            if [ ! -d ${dwidir} ]; then
+                
+                continue
+                
+            fi
+
+            total_sessions=$((total_sessions+1))
+            sessiondir=$(dirname ${dwidir})
+            session=$(echo "${sessiondir}" | grep -oP "(?<=${subj}/).*")
+            if [ -z "${session}" ]; then
+                sessionpath=/
+                sessionfile=_
+            else
+                sessionpath=/${session}/
+                sessionfile=_${session}_
+                
+            fi
+            
+            if [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-ndi_noddi.nii.gz ]] &&
+            [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-odi_noddi.nii.gz ]] &&
+            [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-isovf_noddi.nii.gz ]]; then
+                echo -e "${GREEN}${subj}${sessionfile} already preprocessed with NODDI${NC}"
+                
+                done_sessions=$((done_sessions+1))
+                continue
+            fi
+            
         
-        echo "Submitting NODDI job for ${subj}"
-        if [ -z "${job_id_eddy}" ]; then 
-        job_id_noddi=$(sbatch --parsable ${scriptdir}/dwi-02c-prep4noddi.sh -w ${workdir} -o ${outputdir} -s ${subj} -c ${scriptdir})
+        
+        if [ "$total_sessions" -gt 0 ] && [ "$done_sessions" -eq "$total_sessions" ]; then
+            echo "All sessions already have NODDI output for ${subj}."
+        else
+            
+            echo "Submitting NODDI job for ${subj}"
+            if [ -z "${job_id_eddy}" ]; then 
+            job_id_noddi=$(sbatch --parsable ${scriptdir}/dwi-02c-prep4noddi.sh -w ${workdir} -o ${outputdir} -s ${subj} -z ${session})
+            echo "NODDI preprocjob ID: $job_id_noddi"
+            job_id_noddi2=$(sbatch --gres=gpu:1g.10gb:1 --wait --parsable --dependency=afterok:$job_id_noddi --kill-on-invalid-dep=yes ${scriptdir}/dwi-02d-noddi.sh -w ${workdir} -o ${outputdir} -s ${subj} -z ${session})
+            echo "NODDI GPU job ID: $job_id_noddi2"
 
-        else 
-        job_id_noddi=$(sbatch --parsable --dependency=afterok:$job_id_eddy ${scriptdir}/dwi-02c-prep4noddi.sh -w ${workdir} -o ${outputdir} -s ${subj} -c ${scriptdir})
-        echo "NODDI job ID: $job_id_noddi"
+
+            else 
+            job_id_noddi=$(sbatch --parsable --dependency=afterok:$job_id_eddy --kill-on-invalid-dep=yes ${scriptdir}/dwi-02c-prep4noddi.sh -w ${workdir} -o ${outputdir} -s ${subj} -z ${session})
+            echo "NODDI preproc job ID: $job_id_noddi"
+            job_id_noddi2=$(sbatch --gres=gpu:1g.10gb:1 --wait --parsable --dependency=afterok:$job_id_noddi --kill-on-invalid-dep=yes ${scriptdir}/dwi-02d-noddi.sh -w ${workdir} -o ${outputdir} -s ${subj} -z ${session})
+            echo "NODDI GPU job ID: $job_id_noddi2"
+
+            fi
+
+
         fi
+    done
 
-
-    fi
     
 else
-    job_id_noddi=$job_id_eddy
+    job_id_noddi2=$job_id_eddy
 fi
 
 ###########################
 ## DWI-2-T1 registration ##
 ###########################
 # echo "Submitting Anat-2-DWI registration job for ${subj}"
-# job_id_anat2dwi=$(sbatch --parsable --dependency=afterok:$job_id_noddi ${scriptdir}/dwi-03-anat2dwi.sh -i ${bidsdir} -o ${outputdir} -f ${freesurferdir} -w ${workdir} -s ${subj} -c ${scriptdir})
+# job_id_anat2dwi=$(sbatch --parsable --dependency=afterok:$job_id_noddi2 ${scriptdir}/dwi-03-anat2dwi.sh -i ${bidsdir} -o ${outputdir} -f ${freesurferdir} -w ${workdir} -s ${subj} -c ${scriptdir})
 # echo "Anat-2-DWI registration job ID: $job_id_anat2dwi"
 
 # ###########################
@@ -274,7 +303,7 @@ fi
 # echo "Tract-to-Connectome job ID: $job_id_tck2conn"
 
 
-final_job_id=$(sbatch --wait --parsable --kill-on-invalid-dep=yes --dependency=afterok:$job_id_eddy --mem=20M -c 1 --time=00-00:00:10 --wrap "echo 'All jobs completed for ${subj}'")
+final_job_id=$(sbatch --wait --parsable --kill-on-invalid-dep=yes --dependency=afterok:$job_id_noddi2 --mem=20M -c 1 --time=00-00:00:10 --wrap "echo 'All jobs completed for ${subj}'")
 
 
 #final_job_id=$(sbatch --parsable --dependency=afterok:$job_id_tck2conn --wrap "echo 'All jobs completed for ${subj}'")

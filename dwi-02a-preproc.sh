@@ -35,7 +35,7 @@ module load ANTs/2.5.1
 module load Anaconda3/2023.03
 module load freesurfer # v8.1
 conda activate /scratch/anw/share/python-env/mrtrix
-synthstrippath=/scratch/anw/share-np/fmridenoiser/synthstrip.1.2.sif
+synthstrippath=/opt/aumc-containers/apptainer/synthseg/synthstrip_1.8.sif
 #synbpath=/opt/aumc-containers/apptainer/synb0-disco/synb0-disco_v3.1.sif
 synbpath=/scratch/anw/cvriend/synb0mod.sif
 FSlicense=/opt/aumc-apps-eb/software/FreeSurfer/license.txt
@@ -199,7 +199,7 @@ for dwidirectory in ${bidsdir}/${subj}/{,ses*/}dwi; do
         #Remove Gibbs Ringing Artifacts
         mrdegibbs ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz \
-        -nthreads ${SLURM_CPUS_PER_TASK}
+        -nthreads ${SLURM_CPUS_PER_TASK} -force
         rm ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif
     fi
 
@@ -228,10 +228,10 @@ for dwidirectory in ${bidsdir}/${subj}/{,ses*/}dwi; do
 
             mkdir -p ${workdir}/${subj}${sessionpath}fmap
 
-            # if [[ $(ls ${fieldmap_folder}/*acq-dwi*dir*epi.json | wc -l) -gt 2 ]]; then
-            #     echo -e "${RED}ERROR! more than 2 fieldmaps for acq-dwi found in ${fieldmap_folder}${NC}"
-            #     exit 0
-            # fi
+           #  if [[ $(ls ${fieldmap_folder}/*acq-dwi*dir*epi.json | wc -l) -gt 2 ]]; then
+           #      echo -e "${RED}ERROR! more than 2 fieldmaps for acq-dwi found in ${fieldmap_folder}${NC}"
+           #      exit 0
+           #  fi
 
 
             fmap_samePE=()
@@ -255,9 +255,11 @@ for dwidirectory in ${bidsdir}/${subj}/{,ses*/}dwi; do
                 fi
             done
 
-        for fmap in "${fmap_samePE}" "${fmap_otherPE}"; do
+        #for fmap in "${fmap_samePE}" "${fmap_otherPE}"; do
+	for fmap in "${fmap_samePE[@]}" "${fmap_otherPE[@]}"; do    #Edit JSM
 
             if [ ! -z ${fmap} ]; then 
+	    #if [ ! -n ${fmap} ]; then     #Edit JSM
 
                 fmap_json=${fmap%%.nii.gz}.json
                 fmap_PE=$(cat ${fmap_json} | jq -r '.PhaseEncodingDirection')
@@ -287,12 +289,12 @@ for dwidirectory in ${bidsdir}/${subj}/{,ses*/}dwi; do
                                 ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif
                                 #Remove Gibbs Ringing Artifacts
                                 mrdegibbs ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif \
-                                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz
+                                ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz -force
                                 rm ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-dns_epi.mif
                     fi
                 else
                         mrdegibbs ${fmap} \
-                        ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz
+                        ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dir}_space-dwi_desc-degibbs_epi.nii.gz -force
                         
                         
                 fi
@@ -374,13 +376,13 @@ for dwidirectory in ${bidsdir}/${subj}/{,ses*/}dwi; do
         dwiextract -nthreads ${SLURM_CPUS_PER_TASK} \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
         -fslgrad ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bval |
-        mrmath - mean ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz -axis 3
+        mrmath - mean ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz -axis 3 -force
         
         # create mean b0 from PA fieldmap
         if [[ $(fslnvols ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-degibbs_epi.nii.gz) -gt 1 ]]; then
             mrmath ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-degibbs_epi.nii.gz \
             mean \
-            ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-temp_epi.nii.gz -axis 3
+            ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-temp_epi.nii.gz -axis 3 -force
         else
             ln -s ${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-degibbs_epi.nii.gz \
             ${subj}${sessionfile}dir-${otherdir}_space-dwi_desc-temp_epi.nii.gz
@@ -761,8 +763,8 @@ for dwidirectory in ${bidsdir}/${subj}/{,ses*/}dwi; do
             
             dim3=$(fslinfo ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz | grep -w dim3 | awk '{ print $2 }' | awk '{print int($0)}')
             if ((dim3 % 4 == 0)); then
-                echo -e "${BLUE}slices are integer multiple of 4; using b02b0_4.cnf for topup${NC}"
-                configfile=b02b0_4.cnf
+                echo -e "${BLUE}slices are integer multiple of 4; using b02b0_2.cnf for topup${NC}"
+                configfile=b02b0_2.cnf
                 elif ((dim3 % 2 == 0)); then
                 echo -e "${BLUE}slices are integer multiple of 2; using b02b0_2.cnf for topup${NC}"
                 configfile=b02b0_2.cnf
@@ -791,7 +793,7 @@ for dwidirectory in ${bidsdir}/${subj}/{,ses*/}dwi; do
         #######################
         # mean of unwarped image to allow registration
         mrmath ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-unwarped_epi.nii.gz mean \
-        ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz -axis 3
+        ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz -axis 3 -force
         
         # Get the mean b-zero (un-corrected)
         dwiextract -nthreads ${SLURM_CPUS_PER_TASK} \

@@ -44,7 +44,7 @@ EOF
 }
 
 module load fsl/6.0.7.6
-CUDIMOT=/scratch/anw/cvriend/cudimot/FSLDEV
+CUDIMOT=/scratch/anw/jasanchezmartinez/cudimot/FSLDEV
 export CUDIMOT
 
 # Initialize variables

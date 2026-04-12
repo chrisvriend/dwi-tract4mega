@@ -642,18 +642,23 @@ fi
             #      b02b0_4.cnf  -- Recommended when the data matrix is an integer multiple of 4 in all direction
             #      b02b0_2.cnf  -- Recommended when the data matrix is an integer multiple of 2 in all direction
             #      b02b0_1.cnf  -- Recommended when the data matrix is odd in one or more directions
-            
+
+           # Extract dimensions
+            dim1=$(fslinfo ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz | grep -w dim1 | awk '{ print $2 }' | awk '{print int($0)}')
+            dim2=$(fslinfo ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz | grep -w dim2 | awk '{ print $2 }' | awk '{print int($0)}')
             dim3=$(fslinfo ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz | grep -w dim3 | awk '{ print $2 }' | awk '{print int($0)}')
-            if ((dim3 % 4 == 0)); then
-                echo -e "${BLUE}slices are integer multiple of 4; using b02b0_4.cnf for topup${NC}"
+
+            if ((dim1 % 4 == 0 && dim2 % 4 == 0 && dim3 % 4 == 0)); then
+                log "${BLUE}" "All dimensions are integer multiples of 4; using b02b0_4.cnf for topup"
                 configfile=b02b0_4.cnf
-                elif ((dim3 % 2 == 0)); then
-                echo -e "${BLUE}slices are integer multiple of 2; using b02b0_2.cnf for topup${NC}"
+            elif ((dim1 % 2 == 0 && dim2 % 2 == 0 && dim3 % 2 == 0)); then
+                log "${BLUE}" "All dimensions are integer multiples of 2; using b02b0_2.cnf for topup"
                 configfile=b02b0_2.cnf
             else
-                echo -e "${BLUE}odd number of slices; using b02b0_1.cnf as config file for topup${NC}"
+                log "${BLUE}" "At least one dimension is odd; using b02b0_1.cnf as config file for topup"
                 configfile=b02b0_1.cnf
             fi
+
             
             echo
             echo -e "${BLUE}running topup${NC}"

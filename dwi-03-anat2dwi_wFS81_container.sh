@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # to incorporate in container
-atlasdir="/data/anw/anw-work/NP/doorgeefluik/atlas4FreeSurfer"
+atlasdir="/tracto/atlases"
 export FSLOUTPUTTYPE=NIFTI_GZ
 export ARTHOME=/opt/art
 
@@ -152,7 +152,7 @@ export SUBJECTS_DIR="${workdir}/${subj}/freesurfer"
 
 if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.pial" ]]; then
     log "$BLUE" "No pre-run FreeSurfer output available"
-    log "$BLUE" "Initializing FreeSurfer 8.1.0 and registering T1w to DWI space"
+    log "$BLUE" "Initializing FreeSurfer 8.2.0 and registering T1w to DWI space"
 
     if [[ ! -z "${session}" ]]; then
  
@@ -215,7 +215,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
     fi
     #----------------------------------------------------------------------
-    #                           FreeSurfer 8.1.0 
+    #                           FreeSurfer 8.2.0 
     #----------------------------------------------------------------------
 
     log "$BLUE" "Start FreeSurfer"
@@ -455,7 +455,7 @@ if [[ ! -f "${SUBJECTS_DIR}/${subj}/label/lh.BN_Atlas.annot" ]] ||
     done
 fi
 
-# does not work in combination with FreeSurfer 8.1.0
+# does not work in combination with FreeSurfer 8.2.0
 # log "$BLUE" "Warping subcortical BNA to individual FreeSurfer
 # if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/BN_Atlas_subcortex.mgz" ]]; then
 #     mri_ca_label -threads ${nthreads} "${SUBJECTS_DIR}/${subj}/mri/brain.mgz" \

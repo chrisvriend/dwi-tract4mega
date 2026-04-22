@@ -1,7 +1,7 @@
 #!/bin/bash
 
 jsonfile=$1
-
+scriptdir=/tracto
 
 export FSLOUTPUTTYPE=NIFTI_GZ
 
@@ -30,7 +30,7 @@ for key in $(jq -r 'keys[]' ${jsonfile}); do
 done
 
 # check if all variables are non-empty
-for var in subj bidsdir outputdir workdir scriptdir freesurferdir eddy_method; do
+for var in subj bidsdir outputdir workdir freesurferdir eddy_method; do
   if [[ -z "${!var}" ]]; then
     echo "Error: Variable '$var' is not set or is empty."
     exit 1

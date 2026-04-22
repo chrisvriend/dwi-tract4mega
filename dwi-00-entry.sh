@@ -1,8 +1,5 @@
 #!/bin/bash 
-
-
 # entrypoint script 
-
 
 # Define color variables
 RED='\033[0;31m'
@@ -30,8 +27,7 @@ Usage() {
 
 pipeline=$1
 specfile=$2
-
-scriptdir=""
+scriptdir=/tracto
 
 # read spec.json file
 for key in $(jq -r 'keys[]' ${specfile}); do
@@ -41,7 +37,7 @@ done
 
 
 # check if all variables are non-empty
-for var in scriptdir; do
+for var in pipeline specfile scriptdir; do
   if [[ -z "${!var}" ]]; then
     echo "Error: Variable '$var' is not set or is empty."
     exit 1

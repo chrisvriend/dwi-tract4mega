@@ -1,7 +1,7 @@
 #!/bin/bash
 
 jsonfile=$1
-
+scriptdir=/tracto
 
 export FSLOUTPUTTYPE=NIFTI_GZ
 

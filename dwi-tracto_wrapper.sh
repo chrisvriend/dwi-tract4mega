@@ -53,11 +53,11 @@ mkdir -p "${outputdir}/dwi-tracto/${subj}/log"
 
 if [[ -z "${session}" ]]; then
   # tractography without session
-  ${scriptdir}/dwi-04a-connectome_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" > ${outputdir}/dwi-tracto/${subj}/log/${subj}_tracto_$(date +"%Y-%m-%d_%H-%M").log
+  ${scriptdir}/dwi-04a-connectome_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" > ${outputdir}/dwi-tracto/${subj}/log/${subj}_tracto_$(date +"%Y-%m-%d_%H-%M").log 2>&1
   status=$?
   if [[ $status -eq 0 ]]; then
 
- ${scriptdir}/dwi-04b-tracts2conn_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" > ${outputdir}/dwi-tracto/${subj}/log/${subj}_conn_$(date +"%Y-%m-%d_%H-%M").log
+ ${scriptdir}/dwi-04b-tracts2conn_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" > ${outputdir}/dwi-tracto/${subj}/log/${subj}_conn_$(date +"%Y-%m-%d_%H-%M").log 2>&1
 
   else
     echo "dwi-tracto failed, skipping tck2conn"
@@ -66,11 +66,11 @@ if [[ -z "${session}" ]]; then
 
 else
   # tractography with session
-  ${scriptdir}/dwi-04a-connectome_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" -z ${session} > ${outputdir}/dwi-tracto/${subj}/log/${subj}_conn_$(date +"%Y-%m-%d_%H-%M").log
+  ${scriptdir}/dwi-04a-connectome_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" -z ${session} > ${outputdir}/dwi-tracto/${subj}/log/${subj}_conn_$(date +"%Y-%m-%d_%H-%M").log 2>&1
   
   status=$?
   if [[ $status -eq 0 ]]; then
- ${scriptdir}/dwi-04b-tracts2conn_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" -z ${session} > ${outputdir}/dwi-tracto/${subj}/log/${subj}_conn_$(date +"%Y-%m-%d_%H-%M").log
+ ${scriptdir}/dwi-04b-tracts2conn_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" -z ${session} > ${outputdir}/dwi-tracto/${subj}/log/${subj}_conn_$(date +"%Y-%m-%d_%H-%M").log 2>&1
   else
     echo "dwi-tracto failed, skipping tck2conn"
     exit 1

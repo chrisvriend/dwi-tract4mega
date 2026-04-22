@@ -24,7 +24,15 @@ BLUE='\033[34m'
 NC='\033[0m' # No Color
 
 
-# initialize function
+# initialize functions
+
+# Helper function for colored output
+log() {
+    local color="$1"
+    shift
+    echo -e "${color}$*${NC}"
+}
+
 # Function to get the "opposite" of a PE direction
 get_opposite_PE() {
     local PEdir="$1"
@@ -110,7 +118,7 @@ fi
     if [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz ]] &&
     [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval ]] &&
     [[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec ]]; then
-        echo -e "${GREEN}${subj}${sessionfile} already preprocessed with eddy${NC}"
+        log "${GREEN}" "${subj}${sessionfile} already preprocessed with eddy"
         exit 0
     fi
     

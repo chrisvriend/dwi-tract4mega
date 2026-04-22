@@ -37,10 +37,6 @@ for var in subj bidsdir outputdir workdir freesurferdir eddy_method; do
   fi
 done  
 
-echo $subj
-echo $session
-
-
 echo
 log "$BLUE" "-- ------------------ --"
 log "$BLUE" "Starting DWI preprocessing for subject: ${subj} ${session}"

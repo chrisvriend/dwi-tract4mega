@@ -168,7 +168,6 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             log "$YELLOW" "after registration to the dwi of that same timepoint."
             log "$YELLOW" "FS output and 5TT, gmwm & atlas files are therefore not suitable for any other timepoint then ${session}"
             log "$YELLOW" "If you want to use this pipeline for longitudinal data, run FreeSurfer separately first."
-            log "$YELLOW" "If you want to use this pipeline for longitudinal data, run FreeSurfer separately first."
             log "$YELLOW" "continuing now ..."
             log ${YELLOW} "----------------------------------------------------------------"
             echo
@@ -217,6 +216,13 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     #----------------------------------------------------------------------
     #                           FreeSurfer 8.2.0 
     #----------------------------------------------------------------------
+
+    if [ -d ${workdir}/${subj}/freesurfer/${subj} ]; then
+
+        log "$YELLOW" "found existing non-finished FreeSurfer directory in the workdir. deleting..."
+        rm -r ${workdir}/${subj}/freesurfer/${subj}
+
+    fi 
 
     log "$BLUE" "Start FreeSurfer"
     recon-all -sd ${workdir}/${subj}/freesurfer  \

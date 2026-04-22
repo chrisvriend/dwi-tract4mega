@@ -81,9 +81,13 @@ mkdir -p "${outputdir}/dwi-preproc/${subj}/log"
 
 if [[ -z "${session}" ]]; then
   # preprocess
-  ${scriptdir}/dwi-02a-preproc_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -c "${scriptdir}" -s "${subj}" -t "${nthreads}" > ${outputdir}/dwi-preproc/${subj}/log/${subj}_preproc_$(date +"%Y-%m-%d_%H-%M").log
+  log "$BLUE" "Step 02a (see log file in ${outputdir}/dwi-preproc/${subj}/log)"
+  echo
+  ${scriptdir}/dwi-02a-preproc_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -c "${scriptdir}" -s "${subj}" -t "${nthreads}" > ${outputdir}/dwi-preproc/${subj}/log/${subj}_preproc_$(date +"%Y-%m-%d_%H-%M").log 2>&1
   status=$?
   if [[ $status -eq 0 ]]; then
+    log "$BLUE" "Steps 02b / 03 (see log file in ${outputdir}/dwi-preproc/${subj}/log)"
+    echo
     run_03_and_02b ""
   else
     echo "dwi-preproc failed, skipping eddy and anat2dwi"
@@ -91,9 +95,13 @@ if [[ -z "${session}" ]]; then
   fi
 else
   # preprocess
-  ${scriptdir}/dwi-02a-preproc_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -c "${scriptdir}" -s "${subj}" -z ${session} -t "${nthreads}" > ${outputdir}/dwi-preproc/${subj}/log/${subj}_preproc_$(date +"%Y-%m-%d_%H-%M").log
+  log "$BLUE" "Step 02a (see log file in ${outputdir}/dwi-preproc/${subj}/log)"
+  echo
+  ${scriptdir}/dwi-02a-preproc_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -c "${scriptdir}" -s "${subj}" -z ${session} -t "${nthreads}" > ${outputdir}/dwi-preproc/${subj}/log/${subj}_preproc_$(date +"%Y-%m-%d_%H-%M").log 2>&1
   status=$?
   if [[ $status -eq 0 ]]; then
+    log "$BLUE" "Steps 02b / 03 (see log file in ${outputdir}/dwi-preproc/${subj}/log)"
+    echo
     run_03_and_02b "-z ${session}"
   else
     echo "dwi-preproc failed, skipping eddy and anat2dwi"
@@ -127,6 +135,7 @@ fi
     for file in ${files}; do
 
       if [ ! -f ${file} ]; then
+        echo
         log "${RED}" "!!!ERROR!!!"
         log "${RED}" "a scan was not found in the output folder"
         echo "${file}"
@@ -139,6 +148,7 @@ fi
 
 
  if [[ ${error} -ne 1 ]]; then
+  echo
   log "$GREEN" "-- ------------------ --"
   log "$GREEN" "DWI preprocessing completed for subject: ${subj} ${session}"
   log "$GREEN" "-- ------------------ --"

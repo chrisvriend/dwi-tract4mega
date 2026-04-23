@@ -150,7 +150,7 @@ export SUBJECTS_DIR="${workdir}/${subj}/freesurfer"
  # otherwise the T1w in space-dwi will not match with other timepoints
  ################################################################################## 
 
-if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.pial" ]]; then
+if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.pial.T1" ]]; then
     log "$BLUE" "No pre-run FreeSurfer output available"
     log "$BLUE" "Initializing FreeSurfer 8.2.0 and registering T1w to DWI space"
 
@@ -268,6 +268,7 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
         mv "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz"
         rm -r "${workdir}/${subj}/temp_5ttgen"
+        cd ${workdir}/${subj}/ # get out temp directory
     fi
 
     log "$BLUE" "5tt GM/WM boundary estimation"
@@ -285,7 +286,7 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
         \"Space\":\"dwi\"}" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
     done
 
-    rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc*.* ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/
+    rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc* ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/
 
 fi
  ################################################################################## 
@@ -345,6 +346,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
             mv "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz" \
                 "${workdir}/${subj}/anat/${subj}_res-FS_desc-5tt-hsvs_probseg.nii.gz"
             rm -r "${workdir}/${subj}/temp_5ttgen"
+            cd ${workdir}/${subj} # get out temp directory
         fi
 
         if [[ ! -f "${workdir}/${subj}/anat/${subj}_res-FS_desc-gmwm_probseg.nii.gz" ]]; then

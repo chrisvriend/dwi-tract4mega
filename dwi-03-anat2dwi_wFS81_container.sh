@@ -154,6 +154,9 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     log "$BLUE" "No pre-run FreeSurfer output available"
     log "$BLUE" "Initializing FreeSurfer 8.2.0 and registering T1w to DWI space"
 
+    mkdir -p "${freesurferdir}"
+
+
     if [[ ! -z "${session}" ]]; then
  
         dwi_files=$(find "${bidsdir}/${subj}" -type f -path "*/dwi/*_dwi.nii.gz")
@@ -180,6 +183,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}anat"
     mkdir -p "${workdir}/${subj}${sessionpath}xfms/"
     mkdir -p "${workdir}/${subj}/freesurfer"
+
 
 
     #----------------------------------------------------------------------

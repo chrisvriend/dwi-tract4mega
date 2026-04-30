@@ -18,15 +18,18 @@
 set -euo pipefail
 
 # Load modules
-module load fsl/6.0.6.5
-module load FreeSurfer/7.3.2-centos8_x86_64
-module load ANTs/2.4.1
+module load fsl/6.0.7.6
+module load ANTs/2.5.1
+module load FreeSurfer/7.4.1.bugfix-centos8_x86_64
+#module load freesurfer # v8.1
 module load art
 module load Anaconda3/2023.03
 conda activate /scratch/anw/share/python-env/mrtrix
 
 MRTRIXapp="/opt/aumc-containers/apptainer/mrtrix3/MRtrix3-3.0.4.sif"
-export APPTAINER_BINDPATH="/scratch,/data/anw/anw-work"
+export APPTAINER_BINDPATH="/scratch,/data/anw/anw-work,/opt/aumc-apps-eb/software/"
+export FS_LICENSE=/opt/aumc-apps-eb/software/FreeSurfer/license.txt
+
 
 # Color variables
 RED='\033[0;31m'
@@ -257,9 +260,11 @@ fi
 if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/deep-seg.log" ]]; then
     log "$YELLOW" "Relying on existing FreeSurfer run"
     mkdir -p "${workdir}/${subj}/freesurfer/"
-    rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
-    cd "${workdir}/${subj}${sessionpath}"
+    mkdir -p "${workdir}/${subj}/anat"
+    mkdir -p "${workdir}/${subj}${sessionpath}xfms/"
 
+    rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
+   
     # Check if required output files exist
     if [[ ! -f "${outputdir}/dwi-preproc/${subj}/anat/${subj}_res-FS_desc-5tt-hsvs_probseg.nii.gz" ]] ||
        [[ ! -f "${outputdir}/dwi-preproc/${subj}/anat/${subj}_res-FS_desc-gmwm_probseg.nii.gz" ]] ||

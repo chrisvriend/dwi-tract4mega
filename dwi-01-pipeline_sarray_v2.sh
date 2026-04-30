@@ -26,6 +26,8 @@ set -euo pipefail
 subj=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "${subjects}")
 method=slmlinearsdc
 nstreamlines=50M
+preproc_only=1
+
 echo "Processing subject: ${subj}"
 
 mkdir -p ${scriptdir}/${subj}
@@ -142,37 +144,35 @@ for session in "${sessions[@]}"; do
     # NODDI-specific code, inside the session loop, after eddy
     if [[ "${noddi:-0}" == 1 ]]; then
 
+        if [[ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-ndi_noddi.nii.gz" ]] &&
+            [[ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-isovf_noddi.nii.gz" ]] &&
+            [[ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-odi_noddi.nii.gz" ]]; then
+                        echo "Preprocessing already done for ${subj} ${session:-}, skipping NODDI jobs."
+                        noddi_jobs+=("")
+        else
 
-            if [[ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi__desc-ndi_noddi.nii.gz" ]] &&
-               [[ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi__desc-isovf_noddi.nii.gz" ]] &&
-               [[ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi__desc-odi_noddi.nii.gz" ]]; then
-                echo "Preprocessing already done for ${subj} ${session:-}, skipping NODDI jobs."
-                noddi_jobs+=("")
-                
-            
-            else
-                echo "Submitting NODDI jobs for ${subj} ${session:-nosession}"
-                job_id_noddi_prep=$(sbatch --parsable \
-                    ${eddy_dep} \
-                    "${scriptdir}/dwi-02c-prep4noddi.sh" \
-                    -w "${workdir}" \
-                    -o "${outputdir}" \
-                    -s "${subj}" \
-                    "${session_arg[@]}"
-                )
-                job_id_noddi_gpu=$(sbatch --parsable \
-                    --gres=gpu:1g.10gb:1 \
-                    --dependency=afterok:${job_id_noddi_prep} \
-                    --kill-on-invalid-dep=yes \
-                    "${scriptdir}/dwi-02d-noddi.sh" \
-                    -w "${workdir}" \
-                    -o "${outputdir}" \
-                    -s "${subj}" \
-                    "${session_arg[@]}"
-                )
-                noddi_jobs+=("${job_id_noddi_gpu}")
+            echo "Submitting NODDI jobs for ${subj} ${session:-nosession}"
+            job_id_noddi_prep=$(sbatch --parsable \
+                ${eddy_dep} \
+                "${scriptdir}/dwi-02c-prep4noddi.sh" \
+                -w "${workdir}" \
+                -o "${outputdir}" \
+                -s "${subj}" \
+                "${session_arg[@]}"
+            )
+            job_id_noddi_gpu=$(sbatch --parsable \
+                --gres=gpu:1g.10gb:1 \
+                --dependency=afterok:${job_id_noddi_prep} \
+                --kill-on-invalid-dep=yes \
+                "${scriptdir}/dwi-02d-noddi.sh" \
+                -w "${workdir}" \
+                -o "${outputdir}" \
+                -s "${subj}" \
+                "${session_arg[@]}"
+            )
+            noddi_jobs+=("${job_id_noddi_gpu}")
 
-            fi
+        fi
     else
         noddi_jobs+=("")
     fi
@@ -180,9 +180,9 @@ for session in "${sessions[@]}"; do
     # Continue with the rest of the pipeline
     job_id_anat2dwi=$(sbatch --parsable \
         ${eddy_dep} \
-        "${scriptdir}/dwi-03-anat2dwi_persession.sh" \
+        "${scriptdir}/dwi-03-anat2dwi.sh" \
         -i "${bidsdir}" \
-        -f "${freesurferdir}/${session}" \
+        -f "${freesurferdir}" \
         -w "${workdir}" \
         -o "${outputdir}" \
         -s "${subj}" \
@@ -191,6 +191,16 @@ for session in "${sessions[@]}"; do
     )
     anat_jobs+=("${job_id_anat2dwi}")
     anat_submitted+=(1)
+
+    # perform tractography and connectome steps only if preproc_only is not set
+    if [ "${preproc_only:-0}" == 1 ]; then
+        echo "Preprocessing only flag is set, skipping tractography and connectome steps for ${subj} ${session:-nosession}"
+        tck_jobs+=("")
+        tck2conn_jobs+=("")
+        tck_submitted+=(0)
+        tck2conn_submitted+=(0)
+        continue
+    fi
 
     job_id_fodtck=$(sbatch --parsable \
         --dependency=afterok:${job_id_anat2dwi} \
@@ -213,49 +223,66 @@ for session in "${sessions[@]}"; do
         -w "${workdir}" \
         -o "${outputdir}" \
         -s "${subj}" \
-        -n ${nstreamlines} \
+        -n "${nstreamlines}" \
         "${session_arg[@]}"
     )
     tck2conn_jobs+=("${job_id_tck2conn}")
     tck2conn_submitted+=(1)
+
+   
 done
 
 ########################
 # FINAL SENTINEL (WAIT HERE)
 ########################
+
 all_jobs=()
 
-for j in "${eddy_jobs[@]}"; do
-    [[ -n "$j" ]] && all_jobs+=("$j")
-done
+collect_jobs() {
+    local array_name="$1"
+    local -n arr_ref="$array_name"   # nameref to the actual array
+    for job_id in "${arr_ref[@]}"; do
+        if [[ "$job_id" =~ ^[0-9]+$ ]]; then
+            all_jobs+=("$job_id")
+        fi
+    done
+}
 
-for j in "${noddi_jobs[@]:-}"; do
-    [[ -n "$j" ]] && all_jobs+=("$j")
-done
+if [ "${preproc_only:-0}" -eq 1 ]; then
+    collect_jobs eddy_jobs
+    collect_jobs noddi_jobs
+    collect_jobs anat_jobs
+else
+    collect_jobs eddy_jobs
+    collect_jobs noddi_jobs
+    collect_jobs anat_jobs
+    collect_jobs tck_jobs
+    collect_jobs tck2conn_jobs
+fi
 
-for j in "${anat_jobs[@]}"; do
-    [[ -n "$j" ]] && all_jobs+=("$j")
-done
 
-for j in "${tck_jobs[@]}"; do
-    [[ -n "$j" ]] && all_jobs+=("$j")
-done
 
-for j in "${tck2conn_jobs[@]}"; do
-    [[ -n "$j" ]] && all_jobs+=("$j")
-done
+
 
 if [[ "${#all_jobs[@]}" -gt 0 ]]; then
     dep_string=$(IFS=:; printf "%s" "${all_jobs[*]// /:}")
     dep_arg=(--dependency=afterok:${dep_string} --kill-on-invalid-dep=yes)
 else
     dep_arg=()
+    dep_string=""
 fi
-echo "Final dependency string: $dep_string"
+
+if [ -z "$dep_string" ]; then
+    echo "No jobs were submitted, skipping final sentinel job."
+else
+    echo "Final sentinel job will depend on jobs: ${dep_string}"
+fi
 
 final_job_id=$(sbatch --wait --parsable \
     "${dep_arg[@]}" \
     --time=00:01:00 -c 1 --mem=10M \
     --wrap "echo 'Pipeline finished for ${subj}'")
+
+
 
 echo "Pipeline completed for ${subj} (final job ${final_job_id})"

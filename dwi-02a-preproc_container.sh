@@ -585,16 +585,17 @@ fi
                 -i ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-n4_T1w.nii.gz \
                 -o ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}desc-brain_T1w.nii.gz \
                 --mask ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}space-T1w_desc-brain_mask.nii.gz
-                
-   
+                                
             
                 cd  ${workdir}/${subj}${sessionpath}fmap/synb0/input
+
                 if [ -L T1.nii.gz ]; then 
                     unlink T1.nii.gz
                     unlink BRAIN.nii.gz
                     unlink acqparams.txt
                     unlink b0.nii.gz
                 fi
+
                 ln -s  ${subj}${sessionfile}desc-n4_T1w.nii.gz T1.nii.gz
                 ln -s  ${subj}${sessionfile}desc-brain_T1w.nii.gz BRAIN.nii.gz
                 ln -s  ${subj}${sessionfile}dir-${dwidir}${otherdir}_desc-refparams.tsv acqparams.txt
@@ -605,9 +606,17 @@ fi
                 if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz ]] || \
                 [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz ]]; then
                    
-                    synb0 --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
-                    --output ${workdir}/${subj}${sessionpath}fmap/synb0/output --notopup
-                     
+
+                    if [[ "${lowmem}" -eq 1 ]]; then
+                    # if lowmem, use cropped T1 and brain for synb0 to reduce memory usage
+                     synb0 --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
+                    --output ${workdir}/${subj}${sessionpath}fmap/synb0/output --notopup --lowmem
+
+                    else 
+                        synb0 --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
+                        --output ${workdir}/${subj}${sessionpath}fmap/synb0/output --notopup
+                    fi
+       
                 fi
                 
                 fslmerge -t ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \

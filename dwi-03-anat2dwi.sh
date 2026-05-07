@@ -20,16 +20,17 @@ set -euo pipefail
 # Load modules
 module load fsl/6.0.7.6
 module load ANTs/2.5.1
-module load FreeSurfer/7.4.1.bugfix-centos8_x86_64
-#module load freesurfer # v8.1
+module load FreeSurfer/7.4.1.bugfix-centos8_x86_64 # kept in for mri_convert and for mrtrix compatibility
+#module load FreeSurfer/8.1.0 #was 7.4.1.bugfix-centos8_x86_64
 module load art
 module load Anaconda3/2023.03
+module load matlab/R2023b
 conda activate /scratch/anw/share/python-env/mrtrix
 
 MRTRIXapp="/opt/aumc-containers/apptainer/mrtrix3/MRtrix3-3.0.4.sif"
+freesurferapp="/opt/aumc-containers/apptainer/freesurfer/freesurfer-8.2.0-1.sif"
 export APPTAINER_BINDPATH="/scratch,/data/anw/anw-work,/opt/aumc-apps-eb/software/"
 export FS_LICENSE=/opt/aumc-apps-eb/software/FreeSurfer/license.txt
-
 
 # Color variables
 RED='\033[0;31m'
@@ -141,27 +142,63 @@ modify_5tt_hsvs() {
     mv 5TT.mif result.mif
     mrconvert result.mif "${subj}_5TThsvs.nii.gz" -force
     5ttcheck result.mif
+    
 }
 
 
 # Check if output already exists
 if compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_atlas-*_dseg.nii.gz" > /dev/null; then
-    log "$GREEN" "${subj}${sessionfile} already has atlases in dwi-space"
+    log "$GREEN" "${subj}${sessionpath} already has atlases in dwi-space"
     log "$GREEN" "...skip..."
     exit 0
 
 else 
     echo "-----------------------------------"
-    log "$BLUE" "Processing subject: ${subj}${sessionfile}"
+    log "$BLUE" "Processing subject: ${subj}${sessionpath}"
     echo "-----------------------------------"
 fi
 
 export SUBJECTS_DIR="${workdir}/${subj}/freesurfer"
 
-# --- FastSurfer/FreeSurfer block ---
+mkdir -p "${workdir}/${subj}${sessionpath}dwi/"
+
+if [ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz ] && 
+[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz ]; then
+
+    rsync -av ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif*.nii.gz \
+    "${workdir}/${subj}${sessionpath}dwi/"
+
+elif [ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz ]; then
+
+    log "$BLUE" "skullstrip dwi and create mask"
+    dwiextract -nthreads "${SLURM_CPUS_PER_TASK}" \
+        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" - -bzero \
+        -fslgrad "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" \
+        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" | \
+        mrmath - mean "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" -axis 3 -force
+    # skullstrip mean b0 (nodif_brain)
+    apptainer run --cleanenv "${synthstrippath}" \
+        -i "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
+        -o "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz" \
+        --mask "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz"
+    rsync -av ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif*.nii.gz \
+    ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz \
+        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"
+
+else 
+    log "$GREEN" "Nodif and brainmask already exist for ${subj}${sessionpath}, skipping nodif creation"
+
+fi
+
+# define nodif brain as reference for registration and 5tt generation
+dwiref="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz"
+dwirefbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
+
+
+# --- FreeSurfer block ---
 if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.pial" ]]; then
     log "$BLUE" "No pre-run FreeSurfer output available"
-    log "$BLUE" "Initializing FastSurfer"
+    log "$BLUE" "Initializing FreeSurfer"
 
     mkdir -p "${workdir}/${subj}/anat"
     mkdir -p "${workdir}/${subj}${sessionpath}xfms/"
@@ -185,12 +222,12 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
         log "$BLUE" "Register T1w to dwi space"
         flirt -in "${workdir}/${subj}/anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" \
-            -ref "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
+            -ref "${dwirefbrain}" \
             -dof 6 -cost normmi -omat "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat"
 
         transformconvert "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat" \
             "${workdir}/${subj}/anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" \
-            "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
+            "${dwirefbrain}" \
             flirt_import \
             "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt"
 
@@ -199,20 +236,38 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
     fi
     #----------------------------------------------------------------------
-    #                           FastSurfer 
+    #                           FreeSurfer 
     #----------------------------------------------------------------------
+    ## need to change this ## 
+    log "$BLUE" "Start FreeSurfer"
 
-    log "$BLUE" "Start FastSurfer"
-    apptainer exec -B "${workdir}:/data" \
-        -B "${SUBJECTS_DIR}:/output" \
-        -B "/opt/aumc-apps-eb/software/FreeSurfer:/fs_license" \
-        /scratch/anw/cvriend/fastsurfer-2.4.2.sif \
-        /fastsurfer/run_fastsurfer.sh \
-        --sd /output --sid "${subj}" --t1 "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz" \
-        --3T --threads ${threads} \
-        --fs_license /fs_license/license.txt
 
-    rsync -av "${workdir}/${subj}/freesurfer/${subj}" "${freesurferdir}"
+    if [ ! -f ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}FLAIR.nii.gz ]; then
+
+        echo -e "${BLUE}running FreeSurfer without FLAIRpial${NC}"
+        apptainer exec  --env FS_LICENSE=${FS_LICENSE} \
+        ${freesurferapp} recon-all \
+        -sd ${freesurferdir} \
+        -subjid ${subj} \
+        -i ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
+        -all -parallel -threads ${threads}
+        
+    else
+        echo -e "${BLUE}running FreeSurfer with FLAIRpial${NC}"
+
+        apptainer exec --env FS_LICENSE=${FS_LICENSE} \
+        ${freesurferapp} recon-all \
+        -sd ${freesurferdir} \
+        -subjid ${subj} \
+        -i ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
+        -FLAIR ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}FLAIR.nii.gz \
+        -FLAIRpial \
+        -all -parallel -threads ${threads}
+
+    
+        fi
+
+   rsync -av "${workdir}/${subj}/freesurfer/${subj}" "${freesurferdir}"
 fi
 
 # --- 5TT generation and GM/WM boundary ---
@@ -222,7 +277,7 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/deep
         rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
     fi
 
-    if [[ ! -f "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" ]]; then
+    if [[ ! -f "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" ]]; then
         log "$BLUE" "5ttgen"
         5ttgen hsvs "${workdir}/${subj}/freesurfer/${subj}" \
             "${subj}${sessionfile}5TThsvs.nii.gz" \
@@ -231,26 +286,27 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/deep
         rm "${subj}${sessionfile}5TThsvs.nii.gz"
         modify_5tt_hsvs "${workdir}/${subj}/temp_5ttgen" "${workdir}/${subj}/freesurfer/" "${subj}"
         mv "${workdir}/${subj}/temp_5ttgen/${subj}${sessionfile}5TThsvs.nii.gz" \
-            "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz"
+            "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz"
         rm -r "${workdir}/${subj}/temp_5ttgen"
+        cd "${workdir}/${subj}${sessionpath}/anat"
     fi
 
     log "$BLUE" "5tt GM/WM boundary estimation"
-    5tt2gmwmi "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
-        "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
+    5tt2gmwmi "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
+        "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
         -nthreads "${threads}" -info -force
 
     for label in 5tt-hsvs gmwm; do
-        mri_convert "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" \
+        mri_convert "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" \
         --out_orientation RAS \
-            "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz"
+            "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz"
         echo "{
         \"Resolution\": \"based on T1w used as input for FastSurfer\",
         \"Orientation\": \"RAS\",
-        \"Space\":\"dwi\"}" > "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
+        \"Space\":\"dwi\"}" > "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
     done
 
-    rsync -a ${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc*.* "${outputdir}/dwi-preproc/${subj}/anat"
+    rsync -a ${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc*.* "${outputdir}/dwi-preproc/${subj}${sessionpath}/anat"
 fi
   
 #----------------------------------------------------------------------
@@ -307,6 +363,8 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
             mv "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz" \
                 "${workdir}/${subj}/anat/${subj}_res-FS_desc-5tt-hsvs_probseg.nii.gz"
             rm -r "${workdir}/${subj}/temp_5ttgen"
+            cd "${workdir}/${subj}/anat"
+
         fi
 
         if [[ ! -f "${workdir}/${subj}/anat/${subj}_res-FS_desc-gmwm_probseg.nii.gz" ]]; then
@@ -342,18 +400,18 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
     if [[ -d "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms" ]]; then
         rsync -a "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms" "${workdir}/${subj}${sessionpath}"
     fi
-    mkdir -p "${workdir}/${subj}${sessionpath}xfms"
+    mkdir -p "${workdir}/${subj}${sessionpath}xfms" "${workdir}/${subj}${sessionpath}anat/"
     cd "${workdir}/${subj}${sessionpath}dwi"
 
     log "$BLUE" "Register T1w to dwi space"
 
     flirt -in "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
-        -ref "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
+        -ref "${dwirefbrain}" \
         -dof 6 -cost normmi -omat "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat"
 
     transformconvert "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat" \
         "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
-        "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
+        "${dwirefbrain}" \
         flirt_import \
         "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" -force
 
@@ -365,13 +423,13 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
             log "$BLUE" "Register ${label} to DWI-space"
             mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_desc-${label}_probseg.nii.gz" \
                 -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
-                "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz"
+                "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz"
 
             echo "{
             \"Resolution\": \"based on T1w used as input for FastSurfer\",
             \"Orientation\": \"RAS\",
             \"Space\":\"dwi\"
-            }" > "${workdir}/${subj}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
+            }" > "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
         done
     fi
 
@@ -391,7 +449,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
     if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" ]]; then
         mkdir -p "${SUBJECTS_DIR}/${subj}/dwi/"
         bbregister --s "${subj}" \
-            --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+            --mov "${dwiref}" \
             --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
     fi
 fi
@@ -493,7 +551,7 @@ for atlas in BNA 300P7N; do
             --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
     else
-        mri_vol2vol --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+        mri_vol2vol --mov "${dwiref}" \
             --targ "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
             --o "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
             --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --inv --no-save-reg --interp nearest \
@@ -516,17 +574,17 @@ for atlas in BNA 300P7N; do
 
     rm "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
 
-    # QC registration of atlas to dwi
-    "${scriptdir}/check_atlasreg.py" \
-        --subjid "${subj}${sessionfile}" \
-        --atlas "${atlas}" \
-        --atlas_image "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" \
-        --nodif "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
-        --output "${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
+    # # QC registration of atlas to dwi
+    # "${scriptdir}/check_atlasreg.py" \
+    #     --subjid "${subj}${sessionfile}" \
+    #     --atlas "${atlas}" \
+    #     --atlas_image "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" \
+    #     --nodif "${dwiref}" \
+    #     --output "${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
 
        
     # fslstats -K "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" \
-    #     "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+    #     "${dwiref}" \
     #     -V > roivols.txt
 
     # labelfile="${atlaspath}/${ID}_modified.txt"
@@ -542,8 +600,8 @@ rsync -av --ignore-existing "${SUBJECTS_DIR}/${subj}" "${freesurferdir}"
 
 # Clean up
 chmod -R u+w "${workdir}/${subj}/freesurfer/fsaverage"
-# rm -rf "${workdir}/${subj}"
+rm -rf "${workdir}/${subj}${sessionpath}"
 
 echo "-----------------------------------"
-echo "finished anat2dwi subject = ${subj}"
+echo "finished anat2dwi subject = ${subj}${sessionpath}"
 echo "-----------------------------------"

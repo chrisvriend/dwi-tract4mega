@@ -93,6 +93,14 @@ else
     sessionID="-${session}"
 fi
 
+  if [ ! -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
+    [ ! -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
+   [ ! -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
+
+    log "${RED}" "eddy output not available in output dir for ${subj} ${session:-nosession}, abort."
+    exit 1
+    fi
+
 # determine whether it is single or multishell using bval file
 bval_file="${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval"
 if [[ ! -f "$bval_file" ]]; then
@@ -116,9 +124,9 @@ elif ((Nshells > 1)); then
         exit 1
     fi
 
-    if [[ ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/data.nii.gz \
-         && ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/bvecs \
-         && ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/bvals ]]; then
+    if [[ -f ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/data.nii.gz \
+         && -f ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/bvecs \
+         && -f ${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}/bvals ]]; then
           log "$GREEN" "NODDI preparation already done for ${subj}${sessionID}, skipping."
           exit 0
      fi
@@ -145,6 +153,12 @@ elif ((Nshells > 1)); then
             --mask "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz"
     fi
 
+    # transfer nodif images
+    rsync -av ${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz \
+    ${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz \
+    ${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz \
+    ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/
+    
     # transfer and rename files to NODDI compatible filenames
     mkdir -p "${workdir}/${subj}${sessionpath}noddi/${subj}${sessionID}"
     cp "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \

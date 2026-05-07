@@ -191,7 +191,7 @@ for session in "${sessions[@]}"; do
     )
     anat_jobs+=("${job_id_anat2dwi}")
     anat_submitted+=(1)
-
+    
     # perform tractography and connectome steps only if preproc_only is not set
     if [ "${preproc_only:-0}" == 1 ]; then
         echo "Preprocessing only flag is set, skipping tractography and connectome steps for ${subj} ${session:-nosession}"
@@ -278,11 +278,11 @@ else
     echo "Final sentinel job will depend on jobs: ${dep_string}"
 fi
 
+target_dir="${workdir}/${subj}/freesurfer"
 final_job_id=$(sbatch --wait --parsable \
     "${dep_arg[@]}" \
     --time=00:01:00 -c 1 --mem=10M \
-    --wrap "echo 'Pipeline finished for ${subj}'")
-
+    --wrap "echo 'Pipeline finished for ${subj}'; rm -rf \"$target_dir\"")
 
 
 echo "Pipeline completed for ${subj} (final job ${final_job_id})"

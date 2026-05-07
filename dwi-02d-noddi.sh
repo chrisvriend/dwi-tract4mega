@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name=NODDI
-#SBATCH --mem=4G
+#SBATCH --mem=2G
 #SBATCH --partition=luna-gpu-short
 #SBATCH --cpus-per-task=1
 #SBATCH --time=00-00:20:00
@@ -44,7 +44,7 @@ EOF
 }
 
 module load fsl/6.0.7.6
-CUDIMOT=/scratch/anw/jasanchezmartinez/cudimot/FSLDEV
+CUDIMOT=/scratch/anw/cvriend/cudimot/FSLDEV
 export CUDIMOT
 
 # Initialize variables
@@ -110,6 +110,7 @@ fi
 log "$BLUE" "Copying NODDI outputs and related files to output directory..."
 rsync -av "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi"*noddi.nii.gz \
     "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz" \
+    "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
     "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"
 

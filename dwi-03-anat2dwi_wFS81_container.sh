@@ -229,9 +229,19 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     fi 
 
     log "$BLUE" "Start FreeSurfer"
-    recon-all -sd ${workdir}/${subj}/freesurfer  \
-    -subjid ${subj} -i ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz \
-    -all -parallel --threads ${nthreads}
+
+    if [[ "${lowmem}" -eq 1 ]]; then
+
+        export FS_V8_XOPTS=0 && recon-all -sd ${workdir}/${subj}/freesurfer  \
+            -subjid ${subj} -i ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz \
+            -all --threads ${nthreads}
+    else 
+
+        recon-all -sd ${workdir}/${subj}/freesurfer  \
+        -subjid ${subj} -i ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz \
+        -all -parallel --threads ${nthreads}
+
+    fi
 
     if [ $? -ne 0 ]; then
         log "$RED" "recon-all failed. Exiting."

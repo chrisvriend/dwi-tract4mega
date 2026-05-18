@@ -423,6 +423,18 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
             \"Space\":\"dwi\"
             }" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
         done
+
+        # for QC purposes, also transform the T1w image to dwi space 
+        mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
+            -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
+
+         echo "{
+            \"Resolution\": \"based on T1w from existing FreeSurfer output \",
+            \"Orientation\": \"RAS\",
+            \"Space\":\"dwi\"
+            }" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.json"
+
     fi
 
     # Transfer to output directory
@@ -435,17 +447,21 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
 
     rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.* \
         ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.* \
+        ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.* \
         "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
 
     ##################################
     # FREESURFER to DWI registration
     ##################################
-    if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" ]]; then
-        mkdir -p "${SUBJECTS_DIR}/${subj}/dwi/"
-        bbregister --s "${subj}" \
-            --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
-            --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
-    fi
+    # not used anymore in favor of direct T1 to DWI registration and subsequent FreeSurfer run on the registered T1w, 
+    #but leaving code here for now for reference and in case we want to use it again.
+
+    # if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" ]]; then
+    #     mkdir -p "${SUBJECTS_DIR}/${subj}/dwi/"
+    #     bbregister --s "${subj}" \
+    #         --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+    #         --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
+    # fi
 fi
 
 # --- Atlas warping and registration to FreeSurfer space---
@@ -489,9 +505,8 @@ fi
 #         --sum "${SUBJECTS_DIR}/${subj}/stats/BN_Atlas_subcortex.stats"
 # fi
 
-if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.nii.gz" ]]; then
+if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz" ]]; then
     mri_aparc2aseg --threads ${nthreads} --s "${subj}" --annot BN_Atlas --o "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz"
-    mrconvert "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz" "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.nii.gz" -force
 fi
 
 # Schaefer Atlas
@@ -545,20 +560,37 @@ for atlas in BNA 300P7N; do
         [[ -z "${ID}" ]] && { log "$RED" "Atlas not found!"; exit 1; }
     fi
 
-    if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" && -f "${SUBJECTS_DIR}/${subj}/scripts/T1w-2-dwi.done" ]]; then
-        mri_convert --in_type mgz --out_type nii \
-            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
-    else
-        mri_vol2vol --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
-            --targ "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-            --o "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
-            --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --inv --no-save-reg --interp nearest \
-            --no-resample
+    # deprecated code for registering atlas to dwi space using FreeSurfer's bbregister, but leaving here for now for reference and in case we want to use it again.
+    # if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" && -f "${SUBJECTS_DIR}/${subj}/scripts/T1w-2-dwi.done" ]]; then
+    #     mri_convert --in_type mgz --out_type nii \
+    #         --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
+    #         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
+    # else
+    #     mri_vol2vol --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+    #         --targ "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
+    #         --o "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
+    #         --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --inv --no-save-reg --interp nearest \
+    #         --no-resample
 
-        fslreorient2std "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
+    #     fslreorient2std "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
+    #         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
+    # fi
+
+    if [[ -f "${SUBJECTS_DIR}/${subj}/scripts/T1w-2-dwi.done" ]]; then
+
+        mri_convert --in_type mgz --out_type nii \
+                --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
+                "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
+    else 
+        mri_convert --in_type mgz --out_type nii \
+                --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
+                "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz"
+        mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz" \
+            -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
-    fi
+        
+    fi 
+
 
     if [[ "${ID}" != *"Schaefer"* ]]; then
         atlaspath="${atlasdir}/${atlas}"

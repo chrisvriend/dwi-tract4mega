@@ -19,14 +19,16 @@
 
 # Load modules
 module load fsl/6.0.7.6
-module load FreeSurfer/7.3.2-centos8_x86_64
+module load FreeSurfer/7.4.1.bugfix-centos8_x86_64 # kept in for mri_convert and for mrtrix compatibility
 module load ANTs/2.5.1
 module load art
 module load Anaconda3/2024.02-1
 conda activate /scratch/anw/share/python-env/mrtrix
 
 MRTRIXapp="/opt/aumc-containers/apptainer/mrtrix3/MRtrix3-3.0.3.sif"
-export APPTAINER_BINDPATH="/scratch,/data/anw/anw-work"
+freesurferapp="/opt/aumc-containers/apptainer/freesurfer/freesurfer-8.2.0-1.sif"
+export APPTAINER_BINDPATH="/scratch,/data/anw/anw-work,/opt/aumc-apps-eb/software/"
+export FS_LICENSE=/opt/aumc-apps-eb/software/FreeSurfer/license.txt
 
 # Color variables
 RED='\033[0;31m'
@@ -229,25 +231,53 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
     fi
     #----------------------------------------------------------------------
-    #                           FastSurfer 
+    #                           FreeSurfer 8.2.0 
     #----------------------------------------------------------------------
+    log "$BLUE" "Start FreeSurfer"
+    log "$YELLOW" "-------------------------------" 
+    log "$YELLOW" "WARNING!!!" 
+    log "$YELLOW" "-------------------------------" 
+    log "$YELLOW" "Code is not suitable for multiple T1w's across sessions yet, please check and adapt if needed"
 
-    log "$BLUE" "Start FastSurfer"
-    apptainer exec -B "${workdir}:/data" \
-        -B "${SUBJECTS_DIR}:/output" \
-        -B "/opt/aumc-apps-eb/software/FreeSurfer:/fs_license" \
-        /scratch/anw/cvriend/fastsurfer-2.4.2.sif \
-        /fastsurfer/run_fastsurfer.sh \
-        --sd /output --sid "${subj}" --t1 "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz" \
-        --3T --threads ${threads} \
-        --fs_license /fs_license/license.txt
+    #if [ ! -f "${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}FLAIR.nii.gz" ]; then
 
-    rsync -av "${workdir}/${subj}${sessionpath}freesurfer/${subj}" "${freesurferdir}"
+        echo -e "${BLUE}running FreeSurfer without FLAIRpial${NC}"
+        apptainer exec  --env FS_LICENSE=${FS_LICENSE} \
+        ${freesurferapp} recon-all \
+        -sd ${freesurferdir} \
+        -subjid ${subj} \
+        -i ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz
+        -all -parallel -threads ${threads}
+        
+        # not yet implemented 
+    #else 
+        # echo -e "${BLUE}running FreeSurfer with FLAIRpial${NC}"
+
+        # apptainer exec --env FS_LICENSE=${FS_LICENSE} \
+        # ${freesurferapp} recon-all \
+        # -sd ${freesurferdir} \
+        # -subjid ${subj} \
+        # -i ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz \
+        #  -FLAIR ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}FLAIR.nii.gz \
+        # -FLAIRpial \
+        # -all -parallel -threads ${threads}
+
+    
+    #fi
+
+   log $BLUE "FreeSurfer finished for ${subj}"
+
+    # Copy FreeSurfer output to freesurferdir and create sentinel file"
+   rsync -av "${workdir}/${subj}/${sessionpath}freesurfer/${subj}" "${freesurferdir}"
+   touch ${freesurferdir}/${subj}/scripts/Tw-2-dwi.done
+
+
+
 fi
 
 # --- 5TT generation and GM/WM boundary ---
-if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/deep-seg.log" ]]; then
-    if [[ ! -f "${workdir}/${subj}${sessionpath}freesurfer/${subj}/scripts/deep-seg.log" ]]; then
+if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/Tw-2-dwi.done" ]]; then
+    if [[ ! -f "${workdir}/${subj}${sessionpath}freesurfer/${subj}/scripts/Tw-2-dwi.done" ]]; then
         rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}${sessionpath}freesurfer/"
     fi
 
@@ -287,7 +317,7 @@ fi
 #                           Existing FreeSurfer run
 #----------------------------------------------------------------------
 
-if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/deep-seg.log" ]]; then
+if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/Tw-2-dwi.done" ]]; then
     log "$YELLOW" "Relying on existing FreeSurfer run"
    
 
@@ -525,7 +555,7 @@ for atlas in BNA 300P7N; do
         [[ -z "${ID}" ]] && { log "$RED" "Atlas not found!"; exit 1; }
     fi
 
-    if [ -f "${SUBJECTS_DIR}/${subj}/scripts/deep-seg.log" ]; then
+    if [ -f "${SUBJECTS_DIR}/${subj}/scripts/Tw-2-dwi.done" ]; then
 
         mri_convert --in_type mgz --out_type nii \
             --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \

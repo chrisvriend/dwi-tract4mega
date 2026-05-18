@@ -429,8 +429,9 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     mkdir -p "${outputdir}/dwi-preproc/${subj}/anat"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"
+    mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms/"
     rsync -a ${workdir}/${subj}/anat/* "${outputdir}/dwi-preproc/${subj}/anat"
-    rsync -a "${workdir}/${subj}${sessionpath}xfms" "${outputdir}/dwi-preproc/${subj}${sessionpath}"
+    rsync -a ${workdir}/${subj}${sessionpath}xfms/* "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms/"
 
     rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.* \
         ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.* \

@@ -154,6 +154,7 @@ else
 fi
 
 export SUBJECTS_DIR=${workdir}/${subj}${sessionpath}freesurfer
+export SUBJECTS_DIR=${workdir}/${subj}${sessionpath}freesurfer
 
 # Create main working and output directories
 mkdir -p \
@@ -162,35 +163,26 @@ mkdir -p \
     "${workdir}/${subj}${sessionpath}xfms/" \
     "${workdir}/${subj}${sessionpath}freesurfer/" \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/" \
-    "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"
+    "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/" \
+    "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms/"
 
-# code to change 
 
- rsync -av ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif* \
+rsync -av ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif* \
  ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain* \
- ${workdir}/${subj}${sessionpath}dwi/ 2>/dev/null
-
+ ${workdir}/${subj}${sessionpath}dwi/
 
 if [ ! -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" ]; then 
     rsync -av ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc* \
         ${workdir}/${subj}${sessionpath}dwi/
 
-    dwiextract ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz \
+    dwiextract ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz  \
     -fslgrad ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec \
-    ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval \
-    -bzero - | mrmath - mean -axis 3 -force ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz
+        ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval \
+        -bzero  -force ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz
     rm ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.*
 
 fi
-if [ ! -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" ]; then 
-    
-    fslmaths ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz \
-        -mas ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz \
-        ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz
-        rsync -a ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz \
-        ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/
-fi
-####
+
 
 # --- FastSurfer/FreeSurfer block ---
 if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.pial" ]]; then
@@ -426,7 +418,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
 
     # Transfer to output directory
     rsync -a ${workdir}/${subj}${sessionpath}anat/* "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
-    rsync -a "${workdir}/${subj}${sessionpath}xfms" "${outputdir}/dwi-preproc/${subj}${sessionpath}"
+    rsync -a ${workdir}/${subj}${sessionpath}xfms/* "${outputdir}/dwi-preproc/${subj}${sessionpath}/xfms/"
     rsync -a "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
         "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
@@ -434,12 +426,12 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
     ##################################
     # FREESURFER to DWI registration
     ##################################
-    if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" ]]; then
-        mkdir -p "${SUBJECTS_DIR}/${subj}/dwi/"
-        bbregister --s "${subj}" \
-            --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
-            --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
-    fi
+    # if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" ]]; then
+    #     mkdir -p "${SUBJECTS_DIR}/${subj}/dwi/"
+    #     bbregister --s "${subj}" \
+    #         --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+    #         --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
+    # fi
 fi
 
 # --- Atlas warping and registration to FreeSurfer space---
@@ -479,9 +471,8 @@ fi
 #         --sum "${SUBJECTS_DIR}/${subj}/stats/BN_Atlas_subcortex.stats"
 # fi
 
-if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.nii.gz" ]]; then
+if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz" ]]; then
     mri_aparc2aseg --threads ${threads} --s "${subj}" --annot BN_Atlas --o "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz"
-    mrconvert "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz" "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.nii.gz" -force
 fi
 
 # Schaefer Atlas
@@ -534,18 +525,17 @@ for atlas in BNA 300P7N; do
         [[ -z "${ID}" ]] && { log "$RED" "Atlas not found!"; exit 1; }
     fi
 
-    if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" && -f "${SUBJECTS_DIR}/${subj}/scripts/deep-seg.log" ]]; then
+    if [ -f "${SUBJECTS_DIR}/${subj}/scripts/deep-seg.log" ]; then
+
         mri_convert --in_type mgz --out_type nii \
             --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
     else
-        mri_vol2vol --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
-            --targ "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-            --o "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
-            --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --inv --no-save-reg --interp nearest \
-            --no-resample
-
-        fslreorient2std "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
+        mri_convert --in_type mgz --out_type nii \
+            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_atlas-${atlas}_temp.nii.gz"
+        mrtransform "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_atlas-${atlas}_temp.nii.gz" \
+            -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
     fi
 

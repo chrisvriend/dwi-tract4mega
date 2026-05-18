@@ -24,7 +24,7 @@ module load FreeSurfer/7.4.1.bugfix-centos8_x86_64 # kept in for mri_convert and
 #module load FreeSurfer/8.1.0 #was 7.4.1.bugfix-centos8_x86_64
 module load art
 module load Anaconda3/2023.03
-module load matlab/R2023b
+#module load matlab/R2023b
 conda activate /scratch/anw/share/python-env/mrtrix
 
 MRTRIXapp="/opt/aumc-containers/apptainer/mrtrix3/MRtrix3-3.0.4.sif"
@@ -238,11 +238,13 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     #----------------------------------------------------------------------
     #                           FreeSurfer 
     #----------------------------------------------------------------------
-    ## need to change this ## 
     log "$BLUE" "Start FreeSurfer"
+    log "$YELLOW" "-------------------------------" 
+    log "$YELLOW" "WARNING!!!" 
+    log "$YELLOW" "-------------------------------" 
+    log "$YELLOW" "Code is not suitable for multiple T1w's across sessions yet, please check and adapt if needed"
 
-
-    if [ ! -f ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}FLAIR.nii.gz ]; then
+    if [ ! -f "${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}FLAIR.nii.gz" ]; then
 
         echo -e "${BLUE}running FreeSurfer without FLAIRpial${NC}"
         apptainer exec  --env FS_LICENSE=${FS_LICENSE} \
@@ -267,12 +269,16 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     
         fi
 
+   log $BLUE "FreeSurfer finished for ${subj}"
+
+    # Copy FreeSurfer output to freesurferdir and create sentinel file"
    rsync -av "${workdir}/${subj}/freesurfer/${subj}" "${freesurferdir}"
+   touch ${freesurferdir}/${subj}/scripts/Tw-2-dwi.done
 fi
 
 # --- 5TT generation and GM/WM boundary ---
-if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/deep-seg.log" ]]; then
-    if [[ ! -f "${workdir}/${subj}/freesurfer/${subj}/scripts/deep-seg.log" ]]; then
+if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/Tw-2-dwi.done" ]]; then
+    if [[ ! -f "${workdir}/${subj}/freesurfer/${subj}/scripts/Tw-2-dwi.done" ]]; then
         mkdir -p "${workdir}/${subj}/freesurfer/"
         rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
     fi
@@ -296,29 +302,42 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/deep
         "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
         -nthreads "${threads}" -info -force
 
-    for label in 5tt-hsvs gmwm; do
+    for label in 5tt-hsvs gmwm wm; do
         mri_convert "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" \
         --out_orientation RAS \
             "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz"
         echo "{
-        \"Resolution\": \"based on T1w used as input for FastSurfer\",
+        \"Resolution\": \"based on T1w used as input for FreeSurfer\",
         \"Orientation\": \"RAS\",
-        \"Space\":\"dwi\"}" > "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
+        \"Space\":\"dwi\"}" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
     done
 
-    rsync -a ${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc*.* "${outputdir}/dwi-preproc/${subj}${sessionpath}/anat"
+    rsync -a ${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc*.* \
+    "${outputdir}/dwi-preproc/${subj}${sessionpath}/anat"
 fi
   
 #----------------------------------------------------------------------
 #                           Existing FreeSurfer run
 #----------------------------------------------------------------------
 
-if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/deep-seg.log" ]]; then
+if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/Tw-2-dwi.done" ]]; then
     log "$YELLOW" "Relying on existing FreeSurfer run"
-    mkdir -p "${workdir}/${subj}/freesurfer/"
+    
     mkdir -p "${workdir}/${subj}/anat"
+    mkdir -p "${workdir}/${subj}/freesurfer/"
     mkdir -p "${workdir}/${subj}${sessionpath}xfms/"
 
+    LOCKFILE="${workdir}/${subj}/anat/.5tt.lock"
+    # Acquire lock (blocking)  
+    exec 200>"${LOCKFILE}"
+        
+    # Try non-blocking first to detect if another job holds the lock
+    if ! flock -n 200; then
+        log "$YELLOW" "Lock held by another job for ${subj}, waiting..."
+        flock 200   # now block until acquired
+    fi
+
+    # At this point only one job per subject is in this block at a time
     rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
    
     # Check if required output files exist
@@ -391,7 +410,14 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
 
         # Transfer from work directory to output directory
         rsync -a ${workdir}/${subj}/anat/*.* "${outputdir}/dwi-preproc/${subj}/anat"
+
+
     fi
+
+
+    # Lock is released automatically when FD 200 is closed or script exits
+    # (optional explicit close)
+        exec 200>&-
 
     ###########################
     # T1 to DWI registration
@@ -403,18 +429,19 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
     mkdir -p "${workdir}/${subj}${sessionpath}xfms" "${workdir}/${subj}${sessionpath}anat/"
     cd "${workdir}/${subj}${sessionpath}dwi"
 
-    log "$BLUE" "Register T1w to dwi space"
+    if [ ! -f ${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt ]; then
+        log "$BLUE" "Register T1w to dwi space"
 
-    flirt -in "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
-        -ref "${dwirefbrain}" \
-        -dof 6 -cost normmi -omat "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat"
+        flirt -in "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
+            -ref "${dwirefbrain}" \
+            -dof 6 -cost normmi -omat "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat"
 
-    transformconvert "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat" \
-        "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
-        "${dwirefbrain}" \
-        flirt_import \
-        "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" -force
-
+        transformconvert "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat" \
+            "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
+            "${dwirefbrain}" \
+            flirt_import \
+            "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" -force
+    fi
     # Apply linear transformation to T1w image:
     if [[ ! -f "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" ]] ||
        [[ ! -f "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" ]]; then
@@ -429,7 +456,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
             \"Resolution\": \"based on T1w used as input for FastSurfer\",
             \"Orientation\": \"RAS\",
             \"Space\":\"dwi\"
-            }" > "${workdir}/${subj}${sessionpath}/anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
+            }" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
         done
     fi
 
@@ -439,19 +466,21 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/de
     rsync -a "${workdir}/${subj}/anat/"* "${outputdir}/dwi-preproc/${subj}/anat"
     rsync -a "${workdir}/${subj}${sessionpath}xfms" "${outputdir}/dwi-preproc/${subj}${sessionpath}"
 
-    rsync -a "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
-        "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
-        "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
+    rsync -a "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg."{nii.gz,json} \
+        "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg."{nii.gz,json} \
+        "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"   
 
     ##################################
     # FREESURFER to DWI registration
     ##################################
-    if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" ]]; then
-        mkdir -p "${SUBJECTS_DIR}/${subj}/dwi/"
-        bbregister --s "${subj}" \
-            --mov "${dwiref}" \
-            --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
-    fi
+    # deprecated, as we now register T1 to DWI space and warp atlases from FreeSurfer space to DWI space, instead of registering DWI to FreeSurfer space. 
+    #This is because the latter can be more error-prone and time-consuming.
+    # if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" ]]; then
+    #     mkdir -p "${SUBJECTS_DIR}/${subj}/dwi/"
+    #     bbregister --s "${subj}" \
+    #         --mov "${dwiref}" \
+    #         --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
+    # fi
 fi
 
 # --- Atlas warping and registration to FreeSurfer space---
@@ -464,6 +493,17 @@ fi
 
 echo
 log "$BLUE" "Warp atlases to FreeSurfer output"
+
+LOCKFILE="${workdir}/${subj}/anat/.warp.lock"
+
+# Acquire lock (blocking)
+exec 200>"${LOCKFILE}"
+
+# Try non-blocking first to detect if another job holds the lock
+if ! flock -n 200; then
+    log "$YELLOW" "Lock held by another job for ${subj}, waiting..."
+    flock 200   # now block until acquired
+fi
 
 # BRAINNETOME ATLAS
 log "$BLUE" "---BRAINNETOME"
@@ -491,9 +531,8 @@ fi
 #         --sum "${SUBJECTS_DIR}/${subj}/stats/BN_Atlas_subcortex.stats"
 # fi
 
-if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.nii.gz" ]]; then
+if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz" ]]; then
     mri_aparc2aseg --threads ${threads} --s "${subj}" --annot BN_Atlas --o "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz"
-    mrconvert "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz" "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.nii.gz" -force
 fi
 
 # Schaefer Atlas
@@ -526,7 +565,14 @@ for parcel in 300P7N ; do
     fi
 done
 
+# release block
+exec 200>&-
+
+
+############################
 # --- Atlas to DWI space ---
+############################
+
 for atlas in BNA 300P7N; do
     if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" ]]; then
         log "$YELLOW" "WARNING! atlas: ${atlas} - not available in FreeSurfer directory of ${subj}"
@@ -546,19 +592,19 @@ for atlas in BNA 300P7N; do
         [[ -z "${ID}" ]] && { log "$RED" "Atlas not found!"; exit 1; }
     fi
 
-    if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" && -f "${SUBJECTS_DIR}/${subj}/scripts/deep-seg.log" ]]; then
+    if [  -f "${SUBJECTS_DIR}/${subj}/scripts/Tw-2-dwi.done" ]; then
         mri_convert --in_type mgz --out_type nii \
             --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
     else
-        mri_vol2vol --mov "${dwiref}" \
-            --targ "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-            --o "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
-            --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --inv --no-save-reg --interp nearest \
-            --no-resample
-
-        fslreorient2std "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
+                
+        mri_convert --in_type mgz --out_type nii \
+                    --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
+                    "${workdir}/${subj}anat/${subj}res-FS_atlas-${atlas}_temp.nii.gz"
+        mrtransform "${workdir}/${subj}anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz" \
+            -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
+
     fi
 
     if [[ "${ID}" != *"Schaefer"* ]]; then
@@ -596,11 +642,11 @@ done
 # Transfer files
 rsync -av "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas"* \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
-rsync -av --ignore-existing "${SUBJECTS_DIR}/${subj}" "${freesurferdir}"
+rsync -av --no-times --ignore-existing "${SUBJECTS_DIR}/${subj}" "${freesurferdir}"
 
 # Clean up
 chmod -R u+w "${workdir}/${subj}/freesurfer/fsaverage"
-rm -rf "${workdir}/${subj}${sessionpath}"
+rm -rf "${workdir}/${subj}${sessionpath}/"
 
 echo "-----------------------------------"
 echo "finished anat2dwi subject = ${subj}${sessionpath}"

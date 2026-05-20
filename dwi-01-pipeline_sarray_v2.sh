@@ -281,6 +281,7 @@ fi
 target_dir="${workdir}/${subj}/freesurfer"
 final_job_id=$(sbatch --wait --parsable \
     "${dep_arg[@]}" \
+    --job-name="dwi_Hodor" \
     --time=00:01:00 -c 1 --mem=10M \
     --wrap "echo 'Pipeline finished for ${subj}'; rm -rf \"$target_dir\"")
 

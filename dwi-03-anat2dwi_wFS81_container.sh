@@ -13,7 +13,8 @@ atlasdir="/tracto/atlases"
 export FSLOUTPUTTYPE=NIFTI_GZ
 export ARTHOME=/opt/art
 
-threads=4
+nthreads=4
+lowmem=${lowmem:-0}
 
 # Color variables
 RED='\033[0;31m'
@@ -161,7 +162,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
  
         dwi_files=$(find "${bidsdir}/${subj}" -type f -path "*/dwi/*_dwi.nii.gz")
         # Count the number of dwi files
-        dwi_count=$(echo "$dwi_files" | grep -c .)
+        dwi_count=$(echo "$dwi_files" | grep -c . || true)
 
         if (( dwi_count > 1 )); then
             echo
@@ -212,10 +213,18 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
             flirt_import \
             "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt"
+                    
+        # Create hybrid template
+        T1spacing=$(mrinfo "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" -spacing | tr ' ' ',')
+        mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+            regrid -voxel ${T1spacing} \
+                    "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
 
         mrtransform "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_T1w.nii.gz" \
             -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
+            -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
+
     fi
     #----------------------------------------------------------------------
     #                           FreeSurfer 8.2.0 
@@ -261,13 +270,21 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
         rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
     fi
 
+    mkdir -p "${workdir}/${subj}${sessionpath}anat"
+
+        # Create hybrid template
+    T1spacing=$(mrinfo "${workdir}/${subj}/freesurfer/${subj}/mri/T1.mgz" -spacing | tr ' ' ',')
+    mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+        regrid -voxel ${T1spacing} \
+        "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
+
+
     if [[ ! -f "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" ]]; then
         log "$BLUE" "5ttgen"
         echo
         if [ -d "${workdir}/${subj}/temp_5ttgen" ]; then
             rm -rf "${workdir}/${subj}/temp_5ttgen"
         fi 
-        rm -rf "${workdir}/${subj}/temp_5ttgen"
 
         5ttgen hsvs "${workdir}/${subj}/freesurfer/${subj}" \
             "${subj}${sessionfile}5TThsvs.nii.gz" \
@@ -275,17 +292,22 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
             -nocrop -nocleanup -scratch "${workdir}/${subj}/temp_5ttgen" -force
         rm "${subj}${sessionfile}5TThsvs.nii.gz"
         modify_5tt_hsvs "${workdir}/${subj}/temp_5ttgen" "${workdir}/${subj}/freesurfer/" "${subj}"
-        mv "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz" \
-            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz"
-        rm -r "${workdir}/${subj}/temp_5ttgen"
+
+        mrgrid "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz" \
+            regrid -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            -interp nearest \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" -force
+
+        rm -rf "${workdir}/${subj}/temp_5ttgen"
         cd ${workdir}/${subj}/ # get out temp directory
     fi
 
-    log "$BLUE" "5tt GM/WM boundary estimation"
-    5tt2gmwmi "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
-        "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
-        -nthreads "${nthreads}" -info -force
-
+    if [[ ! -f "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" ]]; then
+        5tt2gmwmi "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
+            -nthreads "${nthreads}" -info -force
+    fi
+    
     for label in 5tt-hsvs gmwm; do
         mri_convert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" \
         --out_orientation RAS \
@@ -397,15 +419,24 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
 
     log "$BLUE" "Register T1w to dwi space"
 
-    flirt -in "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
-        -ref "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
-        -dof 6 -cost normmi -omat "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat"
+    if [ ! -f "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" ]; then
+        flirt -in "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
+            -ref "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
+            -dof 6 -cost normmi -omat "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat"
 
-    transformconvert "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat" \
-        "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
-        "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
-        flirt_import \
-        "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" -force
+        transformconvert "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat" \
+            "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
+            "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" \
+            flirt_import \
+            "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" -force
+    fi
+
+    # Create hybrid template
+    T1spacing=$(mrinfo "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" -spacing | tr ' ' ',')
+    mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+        regrid -voxel ${T1spacing} \
+        "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
+    
 
     # Apply linear transformation to T1w image:
     if [[ ! -f "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" ]] ||
@@ -414,8 +445,11 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
         for label in 5tt-hsvs gmwm wm; do
             log "$BLUE" "Register ${label} to DWI-space"
             mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_desc-${label}_probseg.nii.gz" \
-                -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
-                "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz"
+            -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
+            -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            -interp nearest \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" -force
+           
 
             echo "{
             \"Resolution\": \"based on T1w from existing FreeSurfer output \",
@@ -427,6 +461,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
         # for QC purposes, also transform the T1w image to dwi space 
         mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
             -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
+            -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
 
          echo "{
@@ -471,6 +506,11 @@ if [[ ! -d "${freesurferdir}/${subj}/mri" ]]; then
     sleep 1
     exit 1
 fi
+if [[ ! -f "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" ]]; then
+    log "$RED" "Hybrid template not found — cannot proceed with atlas registration"
+    exit 1
+fi
+
 
 log "$BLUE" "-----------------------------------"
 log "$BLUE" "Warp atlases to FreeSurfer output"
@@ -576,21 +616,26 @@ for atlas in BNA 300P7N; do
     #         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
     # fi
 
-    if [[ -f "${SUBJECTS_DIR}/${subj}/scripts/T1w-2-dwi.done" ]]; then
-
+    if [[ -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
         mri_convert --in_type mgz --out_type nii \
-                --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-                "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
-    else 
+            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_atlas-${atlas}_temp.nii.gz"
+        mrgrid "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_atlas-${atlas}_temp.nii.gz" \
+            regrid -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            -interp nearest \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" -force
+        rm "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_atlas-${atlas}_temp.nii.gz"
+    else
         mri_convert --in_type mgz --out_type nii \
-                --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-                "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz"
+            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
+            "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz"
         mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz" \
             -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
-            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
-        
-    fi 
-
+            -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            -interp nearest \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" -force
+        rm "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz"
+    fi
 
     if [[ "${ID}" != *"Schaefer"* ]]; then
         atlaspath="${atlasdir}/${atlas}"
@@ -630,7 +675,10 @@ rsync -av ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_re
 rsync -av --ignore-existing "${SUBJECTS_DIR}/${subj}" "${freesurferdir}"
 
 # Clean up
-chmod -R u+w "${workdir}/${subj}/freesurfer/fsaverage"
+if [[ -d "${workdir}/${subj}/freesurfer/fsaverage" ]]; then
+    chmod -R u+w "${workdir}/${subj}/freesurfer/fsaverage"
+    rm -rf "${workdir}/${subj}/freesurfer/fsaverage"
+fi
 
 log "$GREEN" "-----------------------------------"
 log "$GREEN"  "finished anat2dwi subject = ${subj}"

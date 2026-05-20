@@ -1,9 +1,9 @@
 #!/bin/bash
 
 #SBATCH --job-name=eddy
-#SBATCH --mem=6G
+#SBATCH --mem=3G
 #SBATCH --partition=luna-gpu-short
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=1
 #SBATCH --time=00-2:00:00
 #SBATCH --nice=2000
 #SBATCH --qos=anw
@@ -92,6 +92,13 @@ if [[ -z "${session}" ]]; then
 else
     sessionpath="/${session}/"
     sessionfile="_${session}_"
+fi
+
+if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
+    log "$GREEN" "EDDY already run for ${subj}${sessionpath}, skipping"
+    exit 0
 fi
 
 log "$YELLOW" "----------------------"
@@ -222,7 +229,7 @@ case "$method" in
         ;;
 esac
 
-cp ${basedir}/eddy.log "${outputdir}/dwi-preproc/${subj}${sessionpath}logs/${subj}${sessionfile}eddy.log"
+cp ${basedir}/eddy.log "${outputdir}/dwi-preproc/${subj}${sessionpath}log/${subj}${sessionfile}eddy.log"
 
 # rename output
 cd "${workdir}/${subj}${sessionpath}dwi"
@@ -242,18 +249,19 @@ else
         
 fi
 
-rsync -av ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
+rsync -av ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
+ ${subj}${sessionfile}acq-dwi_desc-acqparams.tsv eddyqc \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 
-# clean-up
-# if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
-#    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
-#    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
-#     rm -r "${workdir}/${subj}${sessionpath}"
-#     rm "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*meanb0* \
-#        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*dns+degibbs*
+#clean-up
+if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
+    rm -r "${workdir}/${subj}${sessionpath}"
+    rm "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*meanb0* \
+       "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*dns+degibbs*
 
-#     log "$GREEN" "FINISHED preprocessing ${subj}${sessionpath}"
-# else
-#     log "$RED" "ERROR! not all output was created successfully"
-# fi
+    log "$GREEN" "FINISHED preprocessing ${subj}${sessionpath}"
+else
+    log "$RED" "ERROR! not all output was created successfully"
+fi

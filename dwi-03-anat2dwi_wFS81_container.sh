@@ -13,8 +13,9 @@ atlasdir="/tracto/atlases"
 export FSLOUTPUTTYPE=NIFTI_GZ
 export ARTHOME=/opt/art
 
-nthreads=4
-lowmem=${lowmem:-0}
+nthreads=${nthreads:-4} # default to 4 thread if not set, can be overridden by env variable when running container
+lowmem=${lowmem:-0} # default is to run in high memory mode, set to 1 to run in low memory mode (e.g. on cluster with low mem nodes or local machine)
+subfields=${subfields:-1} # default is to run subfield segmentation, set to 0 to skip
 
 # Color variables
 RED='\033[0;31m'
@@ -243,7 +244,9 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
         export FS_V8_XOPTS=0 && recon-all -sd ${workdir}/${subj}/freesurfer  \
             -subjid ${subj} -i ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz \
-            -all --threads ${nthreads}
+            -all --threads ${nthreads} 
+
+
     else 
 
         recon-all -sd ${workdir}/${subj}/freesurfer  \
@@ -255,6 +258,20 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     if [ $? -ne 0 ]; then
         log "$RED" "recon-all failed. Exiting."
         exit 1
+    fi
+
+    # --- subfield segmentation ---
+
+     if [[ "${subfields}" -eq 1]]; then 
+
+            for structure in thalamus hippo-amygdala brainstem; do 
+
+                segment_subregions ${structure} \
+                -sd ${workdir}/${subj}/freesurfer \
+                --cross ${subj} -nthreads ${nthreads}
+
+            done
+
     fi
 
 

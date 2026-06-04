@@ -149,7 +149,7 @@ if [ ! -f "${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif" ]; then
     dwibiascorrect ants "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" \
         "${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif" -nthreads "${nthreads}" \
         -bias "${subj}${sessionfile}space-dwi_desc-biasest_dwi.mif" \
-        -scratch "${workdir}/${subj}/tempbiascorrect" -force
+        -scratch "${workdir}/${subj}${sessionpath}tempbiascorrect" -force
 fi
 
 # Dilate/erode brain mask
@@ -181,8 +181,8 @@ if (( Nshells == 1 )); then
         "${subj}${sessionfile}space-dwi_tissue-WM_response.txt" \
         "${subj}${sessionfile}space-dwi_tissue-GM_response.txt" \
         "${subj}${sessionfile}space-dwi_tissue-CSF_response.txt" \
-        -nthreads "${nthreads}" -scratch "${workdir}/${subj}/tempdwiresponse"
-        rm -rf "${workdir}/${subj}/tempdwiresponse"
+        -nthreads "${nthreads}" -scratch "${workdir}/${subj}${sessionpath}tempdwiresponse"
+        rm -rf "${workdir}/${subj}${sessionpath}tempdwiresponse"
     fi
     if [ ! -f "${subj}${sessionfile}FOD-wm.mif" ] ||
        [ ! -f "${subj}${sessionfile}FOD-gm.mif" ] ||
@@ -207,8 +207,8 @@ elif (( Nshells > 1 )); then
             "${subj}${sessionfile}space-dwi_tissue-GM_response.txt" \
             "${subj}${sessionfile}space-dwi_tissue-CSF_response.txt" \
             -shell 0,"${shells}" -mask "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
-            -nthreads "${nthreads}" -scratch "${workdir}/${subj}/tempdwiresponse"
-        rm -rf "${workdir}/${subj}/tempdwiresponse"
+            -nthreads "${nthreads}" -scratch "${workdir}/${subj}${sessionpath}tempdwiresponse"
+        rm -rf "${workdir}/${subj}${sessionpath}tempdwiresponse"
     fi
 
     if [ ! -f "${subj}${sessionfile}FOD-wm.mif" ] ||

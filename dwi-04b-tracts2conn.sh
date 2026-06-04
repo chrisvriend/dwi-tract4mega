@@ -175,7 +175,8 @@ fi
 if [ ! -f ${subj}${sessionfile}space-dwi_desc-lengths_stats.csv ]; then
     # extract lengths
     tckstats -dump ${subj}${sessionfile}space-dwi_desc-lengths_stats.csv ${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck \
-        -tck_weights_in ${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt -force -nthreads ${threads}
+        -tck_weights_in ${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt \
+        -force -nthreads ${threads}
 fi
 
 # FA / ND

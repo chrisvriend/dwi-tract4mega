@@ -259,7 +259,7 @@ fi
        [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt" ]; then
         log "$GREEN" "Tractography and connectome construction succesfull for ${subj} ${session:-}"
 
-        chmod -R ug+rwx ${workdir}/dwi-preproc/${subj}${sessionpath}/freesurfer/fsaverage
+        chmod -R ug+rwx ${workdir}/${subj}${sessionpath}/freesurfer/fsaverage
         rm -rf ${workdir}/${subj}${sessionpath}
         
     fi

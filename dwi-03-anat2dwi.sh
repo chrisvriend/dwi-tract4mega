@@ -147,10 +147,12 @@ modify_5tt_hsvs() {
 
 
 # Check if output already exists
-if compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_atlas-*_dseg.nii.gz" > /dev/null; then
-    log "$GREEN" "${subj}${sessionpath} already has atlases in dwi-space"
-    log "$GREEN" "...skip..."
-    exit 0
+if compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-*_dseg.nii.gz" > /dev/null && \
+    compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" > /dev/null && \
+    compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" > /dev/null; then
+     log "$GREEN" "Anatomical to DWI registration and atlas mapping already completed for ${subj} - ${session}"
+     exit 0
+    fi
 
 else 
     echo "-----------------------------------"

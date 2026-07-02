@@ -152,8 +152,7 @@ if compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessi
     compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" > /dev/null; then
      log "$GREEN" "Anatomical to DWI registration and atlas mapping already completed for ${subj} - ${session}"
      exit 0
-    fi
-
+    
 else 
     echo "-----------------------------------"
     log "$BLUE" "Processing subject: ${subj}${sessionpath}"

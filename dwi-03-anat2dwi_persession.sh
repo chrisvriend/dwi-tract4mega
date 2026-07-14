@@ -144,16 +144,18 @@ modify_5tt_hsvs() {
 
 
 # Check if output already exists
-if compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_atlas-*_dseg.nii.gz" > /dev/null; then
-    log "$GREEN" "${subj}${sessionfile} already has atlases in dwi-space"
-    log "$GREEN" "...skip..."
-    exit 0
-
+if compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-*_dseg.nii.gz" > /dev/null && \
+    compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" > /dev/null && \
+    compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" > /dev/null; then
+     log "$GREEN" "Anatomical to DWI registration and atlas mapping already completed for ${subj} - ${session}"
+     exit 0
+    
 else 
     echo "-----------------------------------"
-    log "$BLUE" "Processing subject: ${subj}${sessionfile}"
+    log "$BLUE" "Processing subject: ${subj}${sessionpath}"
     echo "-----------------------------------"
 fi
+
 
 export SUBJECTS_DIR=${workdir}/${subj}${sessionpath}freesurfer
 
@@ -168,25 +170,50 @@ mkdir -p \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms/"
 
 
-rsync -av ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif* \
- ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain* \
- ${workdir}/${subj}${sessionpath}dwi/
+if [ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz ] && 
+[ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz ]; then
 
-if [ ! -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" ]; then 
+    rsync -av ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif*.nii.gz \
+    "${workdir}/${subj}${sessionpath}dwi/"
+
+elif [ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz ]; then
+
+    log "$BLUE" "skullstrip dwi and create mask"
+    dwiextract -nthreads "${SLURM_CPUS_PER_TASK}" \
+        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" - -bzero \
+        -fslgrad "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" \
+        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" | \
+        mrmath - mean "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" -axis 3 -force
+    # skullstrip mean b0 (nodif_brain)
+    apptainer run --cleanenv "${synthstrippath}" \
+        -i "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
+        -o "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz" \
+        --mask "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz"
+    rsync -av ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif*.nii.gz \
+    ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz \
+        "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"
+
+else 
+    log "$GREEN" "Nodif and brainmask already exist for ${subj}${sessionpath}, skipping nodif creation"
+
+fi
+
+
+if [ ! -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" ]; then 
     rsync -av ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc* \
         ${workdir}/${subj}${sessionpath}dwi/
 
     dwiextract ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz  \
     -fslgrad ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval \
-        -bzero  -force ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz
+        -bzero  -force ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz
     rm ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.*
    
 fi
-if [ ! -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz" ]; then
-     fslmaths ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz \
+if [ ! -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz" ]; then
+     fslmaths ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz \
         -mul ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz \
-        ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz
+        ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz
 fi
 
 
@@ -212,16 +239,14 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             --mask "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res_FS_desc-brain_mask.nii.gz"
 
         log "$BLUE" "Register T1w to dwi space"
-        if [ -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz ]; then 
-            refbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz"
-        else
-            refbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
-        fi
+      
+        refbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
+      
 
 
         # Create DWI-space, T1-resolution reference grid
         T1spacing=$(mrinfo "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" -spacing | tr ' ' ',')
-        mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+        mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
             regrid -voxel ${T1spacing} \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
         
@@ -296,7 +321,7 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
 
     T1spacing=$(mrinfo "${workdir}/${subj}${sessionpath}freesurfer/${subj}/mri/T1.mgz" -spacing | tr ' ' ',')
 
-    mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+    mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
         regrid -voxel ${T1spacing} \
         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
 
@@ -436,17 +461,15 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
 
     # Create DWI-space, T1-resolution reference grid
     T1spacing=$(mrinfo "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" -spacing | tr ' ' ',')
-    mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+    mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
         regrid -voxel ${T1spacing} \
         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
 
 
     log "$BLUE" "Register T1w to dwi space"
-    if [ -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz ]; then 
-            refbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz"
-    else
-            refbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
-    fi
+  
+    refbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
+
 
     if [ ! -f ${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt ]; then  
         
@@ -500,7 +523,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     # if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" ]]; then
     #     mkdir -p "${SUBJECTS_DIR}/${subj}/dwi/"
     #     bbregister --s "${subj}" \
-    #         --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+    #         --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
     #         --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
     # fi
 fi
@@ -645,12 +668,12 @@ for atlas in BNA 300P7N; do
         --subjid "${subj}${sessionfile}" \
         --atlas "${atlas}" \
         --atlas_image "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" \
-        --nodif "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+        --nodif "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
         --output "${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
 
        
     # fslstats -K "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" \
-    #     "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz" \
+    #     "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
     #     -V > roivols.txt
 
     # labelfile="${atlaspath}/${ID}_modified.txt"

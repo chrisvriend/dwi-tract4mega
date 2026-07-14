@@ -98,6 +98,39 @@ conda activate /scratch/anw/share/python-env/mrtrix
 ##############
 # CHECK FILES
 ##############
+
+if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" ]; then
+    rsync -av ${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck \
+        ${workdir}/${subj}${sessionpath}dwi/
+fi
+if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt" ]; then
+    rsync -av ${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt \
+        ${workdir}/${subj}${sessionpath}dwi/
+fi
+if [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif ]] \
+ && [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz ]]; then 
+
+    cd "${workdir}/${subj}${sessionpath}dwi"
+    mrconvert "${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" \
+        -fslgrad "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" \
+        "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" \
+        "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" -force
+    dwibiascorrect ants "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" \
+        "${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif" -nthreads "${threads}" \
+        -bias "${subj}${sessionfile}space-dwi_desc-biasest_dwi.mif" \
+        -scratch "${workdir}/${subj}${sessionpath}tempbiascorrect" -force
+    rm "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif"
+
+else 
+        log "$RED" "!!!ERROR!!!"
+        log "$RED" "A scan was not found in the workdir"
+        log "$RED" "Cannot continue "
+        exit 1
+
+fi
+
+
+
 files=$(echo "
     ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck
     ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt
@@ -140,12 +173,12 @@ mkdir -p "${workdir}/${subj}${sessionpath}conn"
 cd ${workdir}/${subj}${sessionpath}dwi
 
 # Determine whether it is single or multishell
-dwishells=$(mrinfo "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" -shell_bvalues | \
+dwishells=$(mrinfo "${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif" -shell_bvalues | \
 tr ' ' '\n' | awk '$1 > 0' )
 Nshells=$(echo "$dwishells" | wc -w)
 
 if (( Nshells > 1 )); then
-    lowshell=$(mrinfo "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" -shell_bvalues |  tr ' ' '\n' | awk '$1 > 0' | head -n 1)
+    lowshell=$(mrinfo "${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif" -shell_bvalues |  tr ' ' '\n' | awk '$1 > 0' | head -n 1)
     log "$YELLOW" "Multishell dwi detected"
     log "$YELLOW" "Using b=${lowshell} for DTI fitting"
     dwiextract ${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif \
@@ -255,11 +288,14 @@ else
 fi
 
 # clean up
- if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" ] &&
+if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" ] &&
        [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt" ]; then
         log "$GREEN" "Tractography and connectome construction succesfull for ${subj} ${session:-}"
 
-        chmod -R ug+rwx ${workdir}/${subj}${sessionpath}/freesurfer/fsaverage
+        if [ -d ${workdir}/${subj}${sessionpath}freesurfer/fsaverage ]; then
+            chmod -R ug+rwx ${workdir}/${subj}${sessionpath}freesurfer/fsaverage
+        fi
+        log "$GREEN" "Cleaning up temporary workdir for ${subj} ${session:-}"
         rm -rf ${workdir}/${subj}${sessionpath}
         
-    fi
+fi

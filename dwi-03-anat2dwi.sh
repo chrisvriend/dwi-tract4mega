@@ -194,6 +194,12 @@ fi
 # define nodif brain as reference for registration and 5tt generation
 dwiref="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz"
 dwirefbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
+#back-up before modifying the sform/qform of the reference brain to avoid issues with flirt
+cp ${dwiref} ${dwiref}.orig
+cp ${dwirefbrain} ${dwirefbrain}.orig 
+
+fslorient -copysform2qform ${dwiref}
+fslorient -copysform2qform ${dwirefbrain}
 
 
 # --- FreeSurfer block ---
@@ -214,7 +220,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
         mri_convert --conform "${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz" \
             "${workdir}/${subj}/anat/${subj}${sessionfile}res-FS_T1w.nii.gz"
         #reorient to std?
-
+\
         # Brainstrip T1w
         apptainer run --cleanenv "${synthstrippath}" \
             -i "${workdir}/${subj}/anat/${subj}${sessionfile}res-FS_T1w.nii.gz" \
@@ -456,6 +462,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     mkdir -p "${workdir}/${subj}${sessionpath}xfms" "${workdir}/${subj}${sessionpath}anat/"
     cd "${workdir}/${subj}${sessionpath}dwi"
 
+
     if [ ! -f ${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt ]; then
         log "$BLUE" "Register T1w to dwi space"
 
@@ -489,12 +496,24 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" -force
 
             echo "{
-            \"Resolution\": \"based on T1w used as input for FastSurfer\",
+            \"Resolution\": \"based on T1w used as input for FreeSurfer\",
             \"Orientation\": \"RAS\",
             \"Space\":\"dwi\"
             }" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
         done
     fi
+    # for QC purposes, also transform the T1w image to dwi space 
+    mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
+        -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
+        -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+        "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz"
+
+    echo "{
+        \"Resolution\": \"based on T1w from existing FreeSurfer output \",
+        \"Orientation\": \"RAS\",
+        \"Space\":\"dwi\"
+        }" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.json"
+
 
     # Transfer to output directory
     mkdir -p "${outputdir}/dwi-preproc/${subj}/anat"

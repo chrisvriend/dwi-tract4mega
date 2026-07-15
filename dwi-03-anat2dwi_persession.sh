@@ -217,12 +217,22 @@ if [ ! -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_de
 fi
 
 
+# define nodif brain as reference for registration and 5tt generation
+dwiref="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz"
+dwirefbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
+
+#back-up before modifying the sform/qform of the reference brain to avoid issues with flirt
+cp ${dwiref} ${dwiref}.orig
+cp ${dwirefbrain} ${dwirefbrain}.orig 
+
+fslorient -copysform2qform ${dwiref}
+fslorient -copysform2qform ${dwirefbrain}
+
 # --- FastSurfer/FreeSurfer block ---
 if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.pial" ]]; then
     log "$BLUE" "No pre-run FreeSurfer output available"
     log "$BLUE" "Initializing FastSurfer"
-
-    
+  
 
     #----------------------------------------------------------------------
     #                           Register T1w to dwi space 
@@ -239,24 +249,21 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             --mask "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res_FS_desc-brain_mask.nii.gz"
 
         log "$BLUE" "Register T1w to dwi space"
-      
-        refbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
-      
-
+    
 
         # Create DWI-space, T1-resolution reference grid
         T1spacing=$(mrinfo "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" -spacing | tr ' ' ',')
-        mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
+        mrgrid "${dwiref}" \
             regrid -voxel ${T1spacing} \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
         
         flirt -in "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" \
-            -ref "${refbrain}" \
+            -ref "${dwirefbrain}" \
             -dof 6 -cost normmi -omat "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat"
 
         transformconvert "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" \
-            "${refbrain}" \
+            "${dwirefbrain}" \
             flirt_import \
             "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt"
 
@@ -264,8 +271,10 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
             -template ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
-
+            # = sampe as space-dwi_res-high_T1w.nii.gz 
     fi
+
+
     #----------------------------------------------------------------------
     #                           FreeSurfer 8.2.0 
     #----------------------------------------------------------------------
@@ -321,7 +330,7 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
 
     T1spacing=$(mrinfo "${workdir}/${subj}${sessionpath}freesurfer/${subj}/mri/T1.mgz" -spacing | tr ' ' ',')
 
-    mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
+    mrgrid "${ref}" \
         regrid -voxel ${T1spacing} \
         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
 
@@ -459,27 +468,26 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     fi
     cd ${workdir}/${subj}${sessionpath}dwi
 
+
     # Create DWI-space, T1-resolution reference grid
     T1spacing=$(mrinfo "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" -spacing | tr ' ' ',')
-    mrgrid "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
+    mrgrid ${dwiref} \
         regrid -voxel ${T1spacing} \
         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" -force
 
 
     log "$BLUE" "Register T1w to dwi space"
   
-    refbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
-
 
     if [ ! -f ${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt ]; then  
         
         flirt -in "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" \
-            -ref "${refbrain}" \
+            -ref "${dwirefbrain}" \
             -dof 6 -cost normmi -omat "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat"
 
         transformconvert "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}T1w-2-dwi.mat" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_desc-brain_T1w.nii.gz" \
-            ${refbrain} \
+            ${dwirefbrain} \
             flirt_import \
             "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" -force
     fi
@@ -503,12 +511,25 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
 
 
             echo "{
-            \"Resolution\": \"based on T1w used as input for FastSurfer\",
+            \"Resolution\": \"based on T1w used as input for FreeSurfer\",
             \"Orientation\": \"RAS\",
             \"Space\":\"dwi\"
             }" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
         done
     fi
+
+    # for QC purposes, also transform the T1w image to dwi space 
+            mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" \
+                -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
+                -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+                "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz"
+
+            echo "{
+                \"Resolution\": \"based on T1w from existing FreeSurfer output \",
+                \"Orientation\": \"RAS\",
+                \"Space\":\"dwi\"
+                }" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.json"
+
 
     # Transfer to output directory
     rsync -a ${workdir}/${subj}${sessionpath}anat/* "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"

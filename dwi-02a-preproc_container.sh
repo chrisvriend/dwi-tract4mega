@@ -128,6 +128,8 @@ fi
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}log"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}fmap"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
+    mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}qc"
+
     
     # Specify the path to the DWI JSON sidecar
     dwi_json_path=$(ls ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}dwi.json)
@@ -157,6 +159,7 @@ fi
     if [ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz ]; then
         dwidenoise ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.nii.gz \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
+        -noise ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz \
         -nthreads ${nthreads} -force
         #Remove Gibbs Ringing Artifacts
         mrdegibbs ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
@@ -703,7 +706,7 @@ fi
         #######################
         # mean of unwarped image to allow registration
         mrmath ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-unwarped_epi.nii.gz mean \
-        ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz -axis 3 -force
+        ${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz -axis 3 -force
         
         # Get the mean b-zero (un-corrected)
         dwiextract -nthreads ${nthreads} \
@@ -711,18 +714,18 @@ fi
         -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval |
         mrmath - mean ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz -axis 3 -force
         
-        if [[ ! -f ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz ]]; then
-            # rigid registration of nodif_epi to b0
-            antsRegistrationSyN.sh -d 3 -m ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz \
+        if [[ ! -f ${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz ]]; then
+            # rigid registration of nodif_dwi to b0
+            antsRegistrationSyN.sh -d 3 -m ${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz \
             -f "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz" \
             -o ${subj}${sessionfile}rigidreg -t r -n ${nthreads} -p d
-            mv ${subj}${sessionfile}rigidregWarped.nii.gz ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz
+            mv ${subj}${sessionfile}rigidregWarped.nii.gz ${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz
             rm *rigidreg*
         fi
         if [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz ]]; then
             mri_synthstrip \
-            -i ${subj}${sessionfile}space-dwi_desc-nodif_epi.nii.gz \
-            -o ${subj}${sessionfile}space-dwi_desc-nodifbrain_epi.nii.gz \
+            -i ${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz \
+            -o ${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz \
             --mask ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz
         fi
     
@@ -732,7 +735,11 @@ fi
         ${subj}${sessionfile}space-dwi_desc-topup_fieldmap* \
         ${subj}${sessionfile}space-dwi_desc-topup* \
         ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
-        
+
+        rsync -av ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz \
+        ${outputdir}/dwi-preproc/${subj}${sessionpath}qc
+
+
 echo "Preprocessing complete."
 exit 0
 

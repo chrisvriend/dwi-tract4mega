@@ -272,6 +272,11 @@ cp "${DWIbvals}" \
     "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval"
 mv *.qc eddyqc
 
+# needed for QC 
+mv ${DWIout}.eddy_movement_rms ${DWIout}.eddy_outlier_report ./eddyqc
+
+rsync -av eddyqc/*  "${outputdir}/dwi-preproc/${subj}${sessionpath}qc"
+
 rsync -av ${subj}${sessionfile}*acqparams.tsv ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 

@@ -99,6 +99,7 @@ else
     sessionfile="_${session}_"
 fi
 
+mkdir -p "${workdir}/${subj}/${sessionpath}dwi"
 
 if [ ! -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ]; then 
     log "$RED" "ERROR!! no preprocessed dwi scan found for ${subj} - ${session}"
@@ -128,7 +129,6 @@ if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfi
     exit 0
 fi
 
-mkdir -p "${workdir}/${subj}/${sessionpath}dwi"
 
 for folder in dwi figures logs; do
     mkdir -p "${outputdir}/dwi-connectome/${subj}${sessionpath}/${folder}"
@@ -193,6 +193,7 @@ if (( Nshells == 1 )); then
         "${subj}${sessionfile}space-dwi_tissue-WM_response.txt" \
         "${subj}${sessionfile}space-dwi_tissue-GM_response.txt" \
         "${subj}${sessionfile}space-dwi_tissue-CSF_response.txt" \
+        -mask "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
         -nthreads "${threads}" -scratch "${workdir}/${subj}${sessionpath}tempdwiresponse"
         rm -rf "${workdir}/${subj}${sessionpath}tempdwiresponse"
     fi

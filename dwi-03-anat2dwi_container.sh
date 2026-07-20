@@ -275,7 +275,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
     # --- subfield segmentation ---
 
-     if [[ "${subfields}" -eq 1]]; then 
+     if [[ "${subfields}" -eq 1 ]]; then 
 
             for structure in thalamus hippo-amygdala brainstem; do 
 

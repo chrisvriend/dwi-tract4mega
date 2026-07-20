@@ -108,7 +108,7 @@ if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfi
         ${workdir}/${subj}${sessionpath}dwi/
 fi
 if [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif ]] \
- && [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz ]]; then 
+ && [[ -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz ]]; then 
 
     cd "${workdir}/${subj}${sessionpath}dwi"
     mrconvert "${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" \
@@ -120,7 +120,19 @@ if [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_de
         -bias "${subj}${sessionfile}space-dwi_desc-biasest_dwi.mif" \
         -scratch "${workdir}/${subj}${sessionpath}tempbiascorrect" -force
     rm "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif"
-
+elif [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ]; then 
+    rsync -av ${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.* \
+        ${workdir}/${subj}${sessionpath}dwi/
+    cd "${workdir}/${subj}${sessionpath}dwi"
+    mrconvert "${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" \
+        -fslgrad "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" \
+        "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" \
+        "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" -force
+    dwibiascorrect ants "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" \
+        "${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif" -nthreads "${threads}" \
+        -bias "${subj}${sessionfile}space-dwi_desc-biasest_dwi.mif" \
+        -scratch "${workdir}/${subj}${sessionpath}tempbiascorrect" -force
+    rm "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif"
 else 
         log "$RED" "!!!ERROR!!!"
         log "$RED" "A scan was not found in the workdir"

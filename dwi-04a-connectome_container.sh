@@ -110,9 +110,6 @@ if [ -f "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}t
     exit 0
 fi
 
-# mkdir -p "${workdir}/${subj}"
-# mkdir -p "${workdir}/${subj}/${sessionpath}"
-# mkdir -p "${workdir}/${subj}/${sessionpath}dwi"
 
 for folder in dwi figures log; do
     mkdir -p "${outputdir}/dwi-tracto/${subj}${sessionpath}/${folder}"
@@ -181,6 +178,7 @@ if (( Nshells == 1 )); then
         "${subj}${sessionfile}space-dwi_tissue-WM_response.txt" \
         "${subj}${sessionfile}space-dwi_tissue-GM_response.txt" \
         "${subj}${sessionfile}space-dwi_tissue-CSF_response.txt" \
+        -mask "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
         -nthreads "${nthreads}" -scratch "${workdir}/${subj}${sessionpath}tempdwiresponse"
         rm -rf "${workdir}/${subj}${sessionpath}tempdwiresponse"
     fi

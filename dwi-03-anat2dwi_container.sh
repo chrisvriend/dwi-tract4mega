@@ -238,6 +238,13 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
             -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
+        
+        rsync -av "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
+            
+        mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms/"
+        rsync -av ${workdir}/${subj}${sessionpath}xfms/ \
+            "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms/"
 
     fi
     #----------------------------------------------------------------------
@@ -297,6 +304,7 @@ fi
 if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
     if [[ ! -f "${workdir}/${subj}/freesurfer/${subj}/scripts/T1w-2-dwi.done" ]]; then
         mkdir -p "${workdir}/${subj}/freesurfer/"
+        log "$BLUE" "Copying FreeSurfer output to workdir"
         rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
     fi
 
@@ -348,7 +356,9 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
         \"Space\":\"dwi\"}" > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.json"
     done
 
-    rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc* ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/
+    rsync -a ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc* \
+     ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz \
+     ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/
 
 fi
  ################################################################################## 

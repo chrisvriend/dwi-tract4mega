@@ -67,7 +67,7 @@ def make_mosaic(data, axis, n_slices=7, cmap="gray", vmin=None, vmax=None):
     return fig
 
 
-def optimize_png_bytes(png_bytes, max_width=800):
+def optimize_png_bytes(png_bytes, max_width=1000):
     """Downscale (if wider than max_width) and PNG-optimize image bytes.
     This is what keeps the self-contained HTML from ballooning in size --
     full-resolution QC images are overkill for on-screen review."""
@@ -82,7 +82,7 @@ def optimize_png_bytes(png_bytes, max_width=800):
     return out.getvalue()
 
 
-def fig_to_base64(fig, max_width=800):
+def fig_to_base64(fig, max_width=1000):
     buf = BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.05,
                 facecolor=fig.get_facecolor(), dpi=100)
@@ -171,7 +171,7 @@ def _find_qc_image(qc_dir, filename):
     return p if p.exists() else None
 
 
-def _img_file_to_base64(path, max_width=800):
+def _img_file_to_base64(path, max_width=1000):
     optimized = optimize_png_bytes(Path(path).read_bytes(), max_width=max_width)
     return base64.b64encode(optimized).decode("utf-8")
 
@@ -218,12 +218,9 @@ def collect_eddyqc_images(qc_dir, bvals):
                         "contrast for downstream tractography or microstructure modelling.")
             items.append((f"{label} map", p, desc))
 
-    p = _find_qc_image(qc_dir, "vdm.png")
-    if p:
-        items.append(("Voxel displacement map", p,
-            "Estimated off-resonance field from topup, expressed as a voxel displacement map "
-            "-- the magnitude of susceptibility-induced distortion correction applied at each "
-            "voxel."))
+    # Note: vdm.png (voxel displacement map) intentionally omitted here -- the
+    # topup section covers the same distortion information with an interactive
+    # before/after comparison and overlay.
 
     return items
 
@@ -324,12 +321,99 @@ def plot_outlier_scatter(outliers, n_vols):
     return fig
 
 
+def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
+    """For each volume flagged in the outlier report, build a raw (pre-eddy) vs
+    eddy-processed slider comparison. Uses the same triplanar (axial/coronal/
+    sagittal) layout as the topup section -- coronal/sagittal panels are where
+    slice-to-slice artifacts like 'Venetian blind' banding are most visible,
+    since those planes cut across the full stack of axial slices."""
+    if not outliers:
+        return ""
+
+    if not raw_dwi_path or not preproc_dwi_path:
+        return """
+        <h3 class="subsection-title">Outlier Volume Inspection</h3>
+        <p class="qc-desc">Outlier slices were reported, but the raw and eddy-processed
+        DWI volumes were not provided (<code>--eddy-raw-dwi</code> /
+        <code>--eddy-preproc-dwi</code>), so a visual before/after comparison could not
+        be generated.</p>
+        """
+
+    raw_data = load_4d_volume(raw_dwi_path)
+    proc_data = load_4d_volume(preproc_dwi_path)
+
+    by_scan = {}
+    for o in outliers:
+        by_scan.setdefault(o["scan"], []).append(o)
+
+    blocks = []
+    all_view_data = {}
+    for scan_idx, entries in sorted(by_scan.items()):
+        raw_vol = get_vol(raw_data, scan_idx)
+        proc_vol = get_vol(proc_data, scan_idx)
+
+        both_vals = np.concatenate([raw_vol.flatten(), proc_vol.flatten()])
+        positive = both_vals[both_vals > 0]
+        vmin, vmax = np.percentile(positive, [1, 99]) if positive.size else (None, None)
+
+        before_uri = make_triplanar_data_uri(raw_vol, vmin, vmax)
+        after_uri = make_triplanar_data_uri(proc_vol, vmin, vmax)
+
+        view_id = f"outliervol-{scan_idx}"
+        all_view_data[view_id] = {"before": before_uri, "after": after_uri}
+
+        slice_list = ", ".join(str(e["slice"]) for e in sorted(entries, key=lambda e: e["slice"]))
+        worst = max(abs(e["mean_sq_dev"]) for e in entries)
+
+        blocks.append(f"""
+        <div class="slice-block">
+          <h3>Volume {scan_idx}</h3>
+          <p class="qc-desc">Flagged slice(s): {slice_list} &middot; worst mean-sq.
+          deviation: {worst:.2f}</p>
+          <img id="{view_id}-img" class="mosaic slider-img" src="{before_uri}"
+               alt="volume {scan_idx} raw vs eddy-processed comparison"/>
+          <div class="topup-slider-row">
+            <span class="topup-slider-endlabel">Raw</span>
+            <input type="range" min="0" max="1" step="1" value="0" class="topup-range"
+                   id="{view_id}-range" oninput="updateOutlierVol('{view_id}')">
+            <span class="topup-slider-endlabel">Eddy-processed</span>
+          </div>
+        </div>
+        """)
+
+    script = f"""
+    <script>
+      window.outlierVolData = Object.assign(window.outlierVolData || {{}}, {json.dumps(all_view_data)});
+      function updateOutlierVol(id) {{
+        var d = window.outlierVolData[id];
+        var mode = document.getElementById(id + '-range').value === '1' ? 'after' : 'before';
+        document.getElementById(id + '-img').src = d[mode];
+      }}
+    </script>
+    """
+
+    return f"""
+    <h3 class="subsection-title">Outlier Volume Inspection</h3>
+    <p class="qc-desc">For each volume flagged in the outlier report, drag the slider
+    to compare the raw (pre-eddy) and eddy-processed image. Slice-to-volume or
+    interpolation artifacts &mdash; such as "Venetian blind" banding across slices
+    &mdash; are usually most visible in the coronal/sagittal panels, where alternating
+    bright/dark stripes indicate inconsistent per-slice correction that outlier
+    replacement may not have fully resolved.</p>
+    {"".join(blocks)}
+    {script}
+    """
+
+
 def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
+                    raw_dwi_path=None, preproc_dwi_path=None,
                     mot_abs_thresh=1.0, mot_rel_thresh=0.5, outlier_pct_thresh=5.0):
     """Section for FSL eddy_quad outputs: qc.json + *.eddy_movement_rms +
     *.eddy_outlier_report + the eddy_quad summary PNGs (avg_b0*.png,
-    avg_b<value>.png, cnr####.nii.gz.png, vdm.png), looked up in qc_dir
-    (defaults to the directory containing json_path).
+    avg_b<value>.png, cnr####.nii.gz.png), looked up in qc_dir
+    (defaults to the directory containing json_path). If raw_dwi_path and
+    preproc_dwi_path are given, also builds a raw-vs-processed comparison for
+    every volume flagged in the outlier report.
     Thresholds are conventional soft guidelines, not diagnostic standards --
     pass your own to override."""
     qc = load_eddy_qc_json(json_path)
@@ -393,6 +477,7 @@ def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
 
     image_items = collect_eddyqc_images(qc_dir, bvals)
     images_html = eddyqc_images_html(image_items)
+    outlier_volumes_html = outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers)
     ack_html = eddyqc_acknowledgment(qc.get("eddy_input"))
 
     return f"""
@@ -420,9 +505,300 @@ def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
 
       {outlier_raw}
 
+      {outlier_volumes_html}
+
       {images_html}
 
       {ack_html}
+    </section>
+    """
+
+
+# --------------------------------------------------------------------------
+# Topup / susceptibility distortion correction QC
+# --------------------------------------------------------------------------
+
+def read_acqparams(path):
+    """Parse acqparams.tsv: one row per volume fed into topup, columns are
+    [PE_x, PE_y, PE_z, total_readout_time, ...]. Returns a list of
+    (pe_x, pe_y, pe_z) tuples, one per row/volume."""
+    rows = []
+    for line in Path(path).read_text().strip().splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            rows.append(tuple(float(x) for x in parts[:3]))
+    return rows
+
+
+def pick_pe_volume_indices(acq_rows):
+    """First volume index for each distinct phase-encode direction, in the
+    order first encountered. Returns list of (pe_vector, index) tuples."""
+    seen = {}
+    for i, pe in enumerate(acq_rows):
+        if pe not in seen:
+            seen[pe] = i
+    return sorted(seen.items(), key=lambda kv: kv[1])
+
+
+def load_4d_volume(path):
+    return nib.load(str(path)).get_fdata()
+
+
+def get_vol(data, idx):
+    return data[..., idx] if data.ndim == 4 else data
+
+
+def extract_slice(vol3d, axis, frac=0.5):
+    """axis: 0=sagittal, 1=coronal, 2=axial."""
+    n = vol3d.shape[axis]
+    idx = int(n * frac)
+    if axis == 0:
+        sl = vol3d[idx, :, :]
+    elif axis == 1:
+        sl = vol3d[:, idx, :]
+    else:
+        sl = vol3d[:, :, idx]
+    return np.rot90(sl)
+
+
+def slice_to_data_uri(slice2d, vmin=None, vmax=None, cmap="gray", max_width=500):
+    fig, ax = plt.subplots(figsize=(4, 4), facecolor="black")
+    ax.imshow(slice2d, cmap=cmap, vmin=vmin, vmax=vmax)
+    ax.axis("off")
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+
+def slice_overlay_to_data_uri(base_slice, overlay_slice, vmin, vmax, overlay_absmax,
+                               overlay_cmap="bwr", alpha=0.55, max_width=500):
+    """Grayscale base with a translucent diverging-colormap overlay on top
+    (blue = negative field, red = positive field -- same convention as the
+    fMRIPrep/QSIPrep SDC boundary plots)."""
+    fig, ax = plt.subplots(figsize=(4, 4), facecolor="black")
+    ax.imshow(base_slice, cmap="gray", vmin=vmin, vmax=vmax)
+    ax.imshow(overlay_slice, cmap=overlay_cmap, vmin=-overlay_absmax, vmax=overlay_absmax, alpha=alpha)
+    ax.axis("off")
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+
+def make_triplanar_data_uri(vol3d, vmin, vmax, overlay_vol=None, overlay_absmax=None,
+                             cmap="gray", overlay_cmap="bwr", alpha=0.55, max_width=1000):
+    """Axial, coronal, and sagittal mid-slices side by side in one figure --
+    same sizing convention (max_width) as the noise-map mosaics elsewhere in
+    the report, so panels read consistently across sections."""
+    views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
+    fig, axes = plt.subplots(1, 3, figsize=(3 * 4, 4.4), facecolor="black")
+    for ax_, (label, axis) in zip(axes, views):
+        sl = extract_slice(vol3d, axis)
+        ax_.imshow(sl, cmap=cmap, vmin=vmin, vmax=vmax)
+        if overlay_vol is not None:
+            osl = extract_slice(overlay_vol, axis)
+            ax_.imshow(osl, cmap=overlay_cmap, vmin=-overlay_absmax, vmax=overlay_absmax, alpha=alpha)
+        ax_.axis("off")
+        ax_.set_title(label, color=MUTED, fontsize=11)
+    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.995, top=0.9, bottom=0.005)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+
+def find_matching_pe_index(topup_pe_items, dwi_acqparams_path):
+    """Match the DWI's own phase-encode direction (first row of its
+    acqparams.tsv) to one of the topup input volumes. Returns
+    (vec, index, matched: bool). Falls back to the first topup PE direction
+    with matched=False if no exact match is found or no dwi acqparams given."""
+    if not dwi_acqparams_path:
+        vec, idx = topup_pe_items[0]
+        return vec, idx, False
+    dwi_rows = read_acqparams(dwi_acqparams_path)
+    if not dwi_rows:
+        vec, idx = topup_pe_items[0]
+        return vec, idx, False
+    dwi_pe = dwi_rows[0]
+    for vec, idx in topup_pe_items:
+        if vec == dwi_pe:
+            return vec, idx, True
+    vec, idx = topup_pe_items[0]
+    return vec, idx, False
+
+
+def topup_section(before_path, after_path, topup_acqparams_path,
+                   fieldmap_path=None, dwi_acqparams_path=None, matched_pe_index=None):
+    """QC for susceptibility distortion correction (topup), regardless of
+    whether the fieldmap came from a real reversed-PE acquisition or a
+    synthetic SynB0-DisCo one -- both produce the same before/after file
+    pair, so no branching is needed here.
+
+    before_path: pre-correction 4D volume fed into topup (e.g. *_desc-4topup_epi.nii.gz)
+    after_path:  corrected volume, same volume order (e.g. *_desc-unwarped_epi.nii.gz)
+    topup_acqparams_path: PE-direction table for the topup input volumes (e.g. refparams.tsv)
+    fieldmap_path: topup's --fout field map in Hz (e.g. *_desc-topup_fieldmap.nii.gz).
+        NOTE: this is defined in the same space as `after_path`, not `before_path` --
+        the overlay is only drawn on the after-correction frame for that reason.
+        Do NOT pass the *_fieldcoef.nii.gz file here: it's topup's internal spline
+        representation, not a directly plottable field.
+    dwi_acqparams_path: the DWI's own acqparams.tsv, used to figure out which of the
+        topup input volumes shares the DWI's phase-encode direction.
+    matched_pe_index: manual override -- skip the matching logic and use this volume
+        index directly.
+    """
+    topup_acq_rows = read_acqparams(topup_acqparams_path)
+    pe_items = pick_pe_volume_indices(topup_acq_rows)
+
+    if not pe_items:
+        return f"""
+        <section id="topup" class="qc-section">
+          <h2>Susceptibility Distortion Correction (topup)</h2>
+          <p class="qc-desc">No phase-encode rows could be parsed from
+          <code>{Path(topup_acqparams_path).name}</code>.</p>
+        </section>
+        """
+
+    if matched_pe_index is not None:
+        pe_vec = topup_acq_rows[matched_pe_index]
+        pe_idx = matched_pe_index
+        matched = True
+    else:
+        pe_vec, pe_idx, matched = find_matching_pe_index(pe_items, dwi_acqparams_path)
+
+    def pe_label(vec):
+        return f"({vec[0]:g}, {vec[1]:g}, {vec[2]:g})"
+
+    match_note = ""
+    if not matched:
+        match_note = f"""
+        <p class="qc-desc" style="color:#e0a54e;">Note: the DWI's phase-encode direction
+        could not be confirmed against <code>{Path(topup_acqparams_path).name}</code>
+        (no <code>--topup-dwi-acqparams</code> given, or no exact match found), so the
+        first phase-encode direction PE {pe_label(pe_vec)} is shown below by default.
+        Pass <code>--topup-match-pe-index</code> to select a specific volume explicitly.</p>
+        """
+
+    before_data = load_4d_volume(before_path)
+    after_data = load_4d_volume(after_path)
+    before_vol = get_vol(before_data, pe_idx)
+    after_vol = get_vol(after_data, pe_idx)
+
+    both_vals = np.concatenate([before_vol.flatten(), after_vol.flatten()])
+    positive = both_vals[both_vals > 0]
+    vmin, vmax = np.percentile(positive, [1, 99]) if positive.size else (None, None)
+
+    fieldmap_data = None
+    overlay_absmax = None
+    if fieldmap_path and Path(fieldmap_path).exists():
+        fieldmap_data = nib.load(str(fieldmap_path)).get_fdata()
+        overlay_absmax = np.percentile(np.abs(fieldmap_data), 99)
+
+    before_label = f"Before correction &mdash; PE {pe_label(pe_vec)} (matches DWI)"
+    after_label = f"After correction &mdash; PE {pe_label(pe_vec)} (matches DWI)"
+
+    before_uri = make_triplanar_data_uri(before_vol, vmin, vmax)
+    after_plain_uri = make_triplanar_data_uri(after_vol, vmin, vmax)
+
+    has_overlay = fieldmap_data is not None
+    if has_overlay:
+        after_overlay_uri = make_triplanar_data_uri(
+            after_vol, vmin, vmax, overlay_vol=fieldmap_data, overlay_absmax=overlay_absmax
+        )
+    else:
+        after_overlay_uri = after_plain_uri
+
+    view_data = {
+        "before": before_uri,
+        "after_plain": after_plain_uri,
+        "after_overlay": after_overlay_uri,
+        "before_label": before_label,
+        "after_label": after_label,
+        "has_overlay": has_overlay,
+    }
+
+    global_overlay_control = f"""
+      <label class="overlay-toggle">
+        <input type="checkbox" id="topup-overlay" onchange="updateTopupView()">
+        Show distortion overlay (blue/red = field, applies to corrected image only)
+      </label>
+    """ if has_overlay else ""
+
+    block = f"""
+    <div class="slice-block">
+      <img id="topup-img" class="mosaic slider-img" src="{before_uri}"
+           alt="axial, coronal, sagittal topup before/after comparison"/>
+      <div class="topup-slider-row">
+        <span class="topup-slider-endlabel">Before</span>
+        <input type="range" min="0" max="1" step="1" value="0" class="topup-range"
+               id="topup-range" oninput="updateTopupView()">
+        <span class="topup-slider-endlabel">After</span>
+      </div>
+      <div class="slider-label" id="topup-label">{before_label}</div>
+    </div>
+    """
+
+    script = f"""
+    <script>
+      window.topupData = {json.dumps(view_data)};
+      function updateTopupView() {{
+        var d = window.topupData;
+        var mode = document.getElementById('topup-range').value === '1' ? 'after' : 'before';
+        var overlayCb = document.getElementById('topup-overlay');
+        var img = document.getElementById('topup-img');
+        var label = document.getElementById('topup-label');
+        if (mode === 'before') {{
+          img.src = d.before;
+          label.innerHTML = d.before_label;
+        }} else {{
+          var showOverlay = overlayCb && overlayCb.checked && d.has_overlay;
+          img.src = showOverlay ? d.after_overlay : d.after_plain;
+          label.innerHTML = d.after_label + (showOverlay ? ' + distortion overlay' : '');
+        }}
+      }}
+    </script>
+    """
+
+    overlay_expl = ""
+    if has_overlay:
+        overlay_expl = """
+        <p class="qc-desc">The distortion overlay shows topup's estimated off-resonance
+        field (in Hz) on top of the corrected image, using a blue/red diverging colormap
+        the same way fMRIPrep and QSIPrep display SDC results: blue and red indicate
+        opposite-signed field values, which translate to opposite-direction voxel
+        displacement along the phase-encode axis. Areas with the strongest color
+        (regardless of sign) are where topup found &mdash; and corrected for &mdash;
+        the most distortion, typically near air/tissue boundaries such as the sinuses,
+        ear canals, and orbitofrontal cortex. The overlay is only meaningful on the
+        after-correction image, since the field map shares that image's (undistorted)
+        geometry, not the before-correction image's.</p>
+        """
+
+    return f"""
+    <section id="topup" class="qc-section">
+      <h2>Susceptibility Distortion Correction (topup)</h2>
+      <p class="qc-desc">Drag the slider to compare the DWI's own phase-encode direction
+      before and after topup's distortion correction, across all three views at once.
+      Anatomical boundaries (ventricles, brainstem, orbitofrontal and temporal cortex)
+      that appear shifted or blurred before correction should look sharper and better
+      aligned with expected anatomy after correction.</p>
+      {match_note}
+      {overlay_expl}
+      {global_overlay_control}
+      {block}
+      {script}
     </section>
     """
 
@@ -593,6 +969,48 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     color: #c8ccd1;
     white-space: pre-wrap;
   }}
+  .topup-range {{
+    width: 100%;
+    margin: 0.5rem 0 0.3rem;
+    accent-color: var(--accent);
+  }}
+  .slider-label {{
+    font-size: 0.85rem;
+    color: var(--text);
+    text-align: center;
+    background: #20242b;
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    margin-bottom: 1.2rem;
+  }}
+  .slider-img {{
+    margin-bottom: 0.4rem;
+  }}
+  .topup-slider-row {{
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.5rem;
+  }}
+  .topup-slider-endlabel {{
+    font-size: 0.75rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }}
+  .overlay-toggle {{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--text);
+    margin-bottom: 1.2rem;
+    cursor: pointer;
+    background: #20242b;
+    border: 1px solid #2a2f36;
+    border-radius: 6px;
+    padding: 0.6rem 0.9rem;
+  }}
 </style>
 </head>
 <body>
@@ -624,7 +1042,28 @@ def main():
     p.add_argument("--eddy-outliers", default=None, help="Path to *.eddy_outlier_report")
     p.add_argument("--eddy-qc-dir", default=None,
                     help="Directory containing eddy_quad summary PNGs (avg_b0.png, cnr*.png, "
-                         "vdm.png, etc). Defaults to the directory containing --eddy-json.")
+                         "etc). Defaults to the directory containing --eddy-json.")
+    p.add_argument("--eddy-raw-dwi", default=None,
+                    help="Raw (pre-eddy) 4D DWI volume, e.g. *_desc-dns+degibbs_dwi.nii.gz "
+                         "-- used to build raw-vs-processed comparisons for outlier volumes.")
+    p.add_argument("--eddy-preproc-dwi", default=None,
+                    help="Eddy-processed 4D DWI volume, e.g. *_desc-preproc_dwi.nii.gz, same "
+                         "volume order as --eddy-raw-dwi.")
+    p.add_argument("--topup-before", default=None,
+                    help="Pre-correction 4D volume fed into topup (e.g. *_desc-4topup_epi.nii.gz)")
+    p.add_argument("--topup-after", default=None,
+                    help="Post-correction volume, same volume order (e.g. *_desc-unwarped_epi.nii.gz)")
+    p.add_argument("--topup-acqparams", default=None,
+                    help="PE-direction table for the topup input volumes (e.g. refparams.tsv)")
+    p.add_argument("--topup-fieldmap", default=None,
+                    help="topup's --fout field map in Hz (e.g. *_desc-topup_fieldmap.nii.gz). "
+                         "Do NOT pass *_fieldcoef.nii.gz here -- that's the internal spline "
+                         "representation, not a plottable field.")
+    p.add_argument("--topup-dwi-acqparams", default=None,
+                    help="The DWI's own acqparams.tsv, used to match which topup input volume "
+                         "shares the DWI's phase-encode direction.")
+    p.add_argument("--topup-match-pe-index", type=int, default=None,
+                    help="Manual override: skip PE matching and use this topup input volume index.")
     p.add_argument("--output", default="qc_report.html", help="Output HTML path")
     p.add_argument("--subject", default=None, help="Subject label, e.g. sub-01")
     args = p.parse_args()
@@ -638,7 +1077,18 @@ def main():
     if args.eddy_json and args.eddy_rms:
         sections.append(
             ("eddyqc", "Eddy QC", eddyqc_section(
-                args.eddy_json, args.eddy_rms, args.eddy_outliers, qc_dir=args.eddy_qc_dir
+                args.eddy_json, args.eddy_rms, args.eddy_outliers, qc_dir=args.eddy_qc_dir,
+                raw_dwi_path=args.eddy_raw_dwi, preproc_dwi_path=args.eddy_preproc_dwi,
+            ))
+        )
+
+    if args.topup_before and args.topup_after and args.topup_acqparams:
+        sections.append(
+            ("topup", "Topup", topup_section(
+                args.topup_before, args.topup_after, args.topup_acqparams,
+                fieldmap_path=args.topup_fieldmap,
+                dwi_acqparams_path=args.topup_dwi_acqparams,
+                matched_pe_index=args.topup_match_pe_index,
             ))
         )
 

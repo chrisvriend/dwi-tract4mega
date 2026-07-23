@@ -273,11 +273,14 @@ cp "${DWIbvals}" \
 mv *.qc eddyqc
 
 # needed for QC 
-mv ${DWIout}.eddy_movement_rms ${DWIout}.eddy_outlier_report ./eddyqc
+mv ${DWIout}.eddy_movement_rms ${DWIout}.eddy_outlier_report \
+"${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ./eddyqc
 
 rsync -av eddyqc/*  "${outputdir}/dwi-preproc/${subj}${sessionpath}qc"
+rm -r eddyqc
 
-rsync -av ${subj}${sessionfile}*acqparams.tsv ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" eddyqc \
+rsync -av ${subj}${sessionfile}*acqparams.tsv \
+${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 
 # clean-up

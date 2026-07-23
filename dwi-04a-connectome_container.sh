@@ -111,7 +111,7 @@ if [ -f "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}t
 fi
 
 
-for folder in dwi figures; do
+for folder in dwi figures qc; do
     mkdir -p "${outputdir}/dwi-tracto/${subj}${sessionpath}/${folder}"
 done
    
@@ -179,6 +179,7 @@ if (( Nshells == 1 )); then
         "${subj}${sessionfile}space-dwi_tissue-GM_response.txt" \
         "${subj}${sessionfile}space-dwi_tissue-CSF_response.txt" \
         -mask "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
+        -voxels "${subj}${sessionfile}space-dwi_desc-response_voxels.nii.gz" \
         -nthreads "${nthreads}" -scratch "${workdir}/${subj}${sessionpath}tempdwiresponse"
         rm -rf "${workdir}/${subj}${sessionpath}tempdwiresponse"
     fi
@@ -205,6 +206,7 @@ elif (( Nshells > 1 )); then
             "${subj}${sessionfile}space-dwi_tissue-GM_response.txt" \
             "${subj}${sessionfile}space-dwi_tissue-CSF_response.txt" \
             -shell 0,"${shells}" -mask "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
+            -voxels "${subj}${sessionfile}space-dwi_desc-response_voxels.nii.gz" \
             -nthreads "${nthreads}" -scratch "${workdir}/${subj}${sessionpath}tempdwiresponse"
         rm -rf "${workdir}/${subj}${sessionpath}tempdwiresponse"
     fi
@@ -231,7 +233,9 @@ mtnormalise "${subj}${sessionfile}FOD-wm.mif" "${subj}${sessionfile}FOD-wm-norm.
 
 mrconvert "${subj}${sessionfile}FOD-wm.mif" - -coord 3 0 | \
     mrcat "${subj}${sessionfile}FOD-csf.mif" "${subj}${sessionfile}FOD-gm.mif" - \
-    "${subj}${sessionfile}space-dwi_tissue-RGB.mif" -axis 3 -force
+    "${subj}${sessionfile}space-dwi_tissue-RGB.nii.gz" -axis 3 -force
+
+
 
 #----------------------------------------------------------------------
 #                       Generate Tractogram 
@@ -254,6 +258,12 @@ fi
 
 tckedit "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" \
     "${subj}${sessionfile}space-dwi_tracto-100k.tck" -number 100k -force
+
+
+rsync -av "${subj}${sessionfile}space-dwi_tissue-RGB.nii.gz" \
+ "${subj}${sessionfile}space-dwi_desc-response_voxels.nii.gz" \
+ "${subj}${sessionfile}space-dwi_tracto-100k.tck" \
+ "${outputdir}/dwi-tracto/${subj}${sessionpath}qc"
 
 
 #----------------------------------------------------------------------
@@ -279,21 +289,18 @@ tckmap "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" \
     -force -nthreads "${nthreads}"
 
 # QC
-mrconvert ${subj}${sessionfile}space-dwi_tissue-RGB.mif \
- ${subj}${sessionfile}space-dwi_tissue-RGB.nii.gz
-
 fslmaths "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_dwi.nii.gz" \
     -bin "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_mask.nii.gz"
 overlay 1 0 "${subj}${sessionfile}space-dwi_tissue-RGB.nii.gz" \
     -a "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_mask.nii.gz" 0 1 \
     "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.gz"
 slicer "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.gz" \
-    -i 0 1 -a "${outputdir}/dwi-tracto/${subj}${sessionpath}figures/${subj}${sessionfile}siftoverlay3D.png"
+    -i 0 1 -a "${outputdir}/dwi-tracto/${subj}${sessionpath}qc/${subj}${sessionfile}siftoverlay3D.png"
 rm "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_mask.nii.gz" \
    "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.gz"
 
 rsync -a "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}"* \
- ${subj}${sessionfile}space-dwi_tracto-100k.tck *sift* *mu* \
+ *sift* *mu* \
     "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi"
 rsync -a *response* "${outputdir}/dwi-tracto/${subj}${sessionpath}rpf"
 mrconvert "${subj}${sessionfile}FOD-wm-norm.mif" \

@@ -125,7 +125,7 @@ fi
     
     mkdir -p "${workdir}/${subj}${sessionpath}dwi"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
-    mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}log"
+    #mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}log"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}fmap"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}qc"
@@ -688,8 +688,8 @@ fi
             --config=${configfile} \
             --out=${subj}${sessionfile}space-dwi_desc-topup \
             --iout=${subj}${sessionfile}space-dwi_desc-unwarped_epi \
-            --fout=${subj}${sessionfile}space-dwi_desc-topup_fieldmap --verbose >${subj}${sessionfile}topup.log
-            cp ${subj}${sessionfile}topup.log ${outputdir}/dwi-preproc/${subj}${sessionpath}log
+            --fout=${subj}${sessionfile}space-dwi_desc-topup_fieldmap --verbose >${subj}${sessionfile}topup_$(date +"%Y-%m-%d_%H-%M").log
+            cp ${subj}${sessionfile}topup_$(date +"%Y-%m-%d_%H-%M").log ${outputdir}/dwi-preproc/${subj}/log
             
         fi
         
@@ -736,6 +736,7 @@ fi
         ${subj}${sessionfile}space-dwi_desc-topup* \
         ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
 
+        # for QC
         rsync -av ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz \
         ${outputdir}/dwi-preproc/${subj}${sessionpath}qc
 

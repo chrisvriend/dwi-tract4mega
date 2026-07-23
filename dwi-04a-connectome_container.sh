@@ -111,7 +111,7 @@ if [ -f "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}t
 fi
 
 
-for folder in dwi figures log; do
+for folder in dwi figures; do
     mkdir -p "${outputdir}/dwi-tracto/${subj}${sessionpath}/${folder}"
 done
    

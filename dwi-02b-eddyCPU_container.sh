@@ -257,7 +257,7 @@ case "$method" in
         ;;
 esac
 
-cp ${basedir}/eddy.log "${outputdir}/dwi-preproc/${subj}${sessionpath}log/${subj}${sessionfile}eddy.log"
+cp ${basedir}/eddy.log "${outputdir}/dwi-preproc/${subj}/log/${subj}${sessionfile}eddy_$(date +"%Y-%m-%d_%H-%M").log"
 
 # rename output
 cd "${workdir}/${subj}${sessionpath}dwi"

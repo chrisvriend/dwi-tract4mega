@@ -66,7 +66,7 @@ if [[ -z "${session}" ]]; then
 
 else
   # tractography with session
-  ${scriptdir}/dwi-04a-connectome_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" -z ${session} > ${outputdir}/dwi-tracto/${subj}/log/${subj}_conn_$(date +"%Y-%m-%d_%H-%M").log 2>&1
+  ${scriptdir}/dwi-04a-connectome_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -t "${nthreads}" -x "${nstreamlines}" -z ${session} > ${outputdir}/dwi-tracto/${subj}/log/${subj}_tracto_$(date +"%Y-%m-%d_%H-%M").log 2>&1
   
   status=$?
   if [[ $status -eq 0 ]]; then

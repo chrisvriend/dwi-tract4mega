@@ -27,6 +27,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from PIL import Image
+from scipy.ndimage import median_filter
 
 DARK_BG = "#1b1f24"
 MUTED = "#9aa4af"
@@ -176,9 +177,12 @@ def _img_file_to_base64(path, max_width=1000):
     return base64.b64encode(optimized).decode("utf-8")
 
 
-def collect_eddyqc_images(qc_dir, bvals):
+def collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=False):
     """Locate and describe the eddy_quad summary PNGs, if present in qc_dir.
-    Returns a list of (title, filepath, description) tuples."""
+    Returns a list of (title, filepath, description) tuples.
+    skip_b0_snr: omit cnr0000.nii.gz.png (the static b0 SNR rendering) --
+    used when a colorbar'd SNR map is derived directly from the CNR-maps
+    NIfTI instead (see snr_map_block)."""
     qc_dir = Path(qc_dir)
     items = []
 
@@ -207,6 +211,8 @@ def collect_eddyqc_images(qc_dir, bvals):
     # subsequent indices are the CNR map for each shell, in the order of data_unique_bvals.
     cnr_labels = ["b0 SNR"] + [f"b={int(b)} CNR" for b in bvals]
     for i, label in enumerate(cnr_labels):
+        if i == 0 and skip_b0_snr:
+            continue
         p = _find_qc_image(qc_dir, f"cnr{i:04d}.nii.gz.png")
         if p:
             if i == 0:
@@ -225,8 +231,8 @@ def collect_eddyqc_images(qc_dir, bvals):
     return items
 
 
-def eddyqc_images_html(items):
-    if not items:
+def eddyqc_images_html(items, extra_prefix_html=""):
+    if not items and not extra_prefix_html:
         return ""
     blocks = "\n".join(f"""
       <div class="slice-block">
@@ -237,6 +243,7 @@ def eddyqc_images_html(items):
     """ for title, path, desc in items)
     return f"""
     <h3 class="subsection-title">eddy_quad Summary Images</h3>
+    {extra_prefix_html}
     {blocks}
     """
 
@@ -332,11 +339,13 @@ def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
 
     if not raw_dwi_path or not preproc_dwi_path:
         return """
+        <div id="outliervol" class="subsection-anchor">
         <h3 class="subsection-title">Outlier Volume Inspection</h3>
         <p class="qc-desc">Outlier slices were reported, but the raw and eddy-processed
         DWI volumes were not provided (<code>--eddy-raw-dwi</code> /
         <code>--eddy-preproc-dwi</code>), so a visual before/after comparison could not
         be generated.</p>
+        </div>
         """
 
     raw_data = load_4d_volume(raw_dwi_path)
@@ -393,6 +402,7 @@ def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
     """
 
     return f"""
+    <div id="outliervol" class="subsection-anchor">
     <h3 class="subsection-title">Outlier Volume Inspection</h3>
     <p class="qc-desc">For each volume flagged in the outlier report, drag the slider
     to compare the raw (pre-eddy) and eddy-processed image. Slice-to-volume or
@@ -402,11 +412,77 @@ def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
     replacement may not have fully resolved.</p>
     {"".join(blocks)}
     {script}
+    </div>
+    """
+
+
+def compute_snr_map(cnr_maps_path, median_filter_size=3):
+    """Volume 0 of eddy's CNR-maps output is the b0 SNR map (mean / std across
+    the b0 volumes, per eddy_quad's convention). A light median filter reduces
+    the influence of random noise and small misalignment, per Tahedl,
+    Tournier & Smith (2025)."""
+    data = nib.load(str(cnr_maps_path)).get_fdata()
+    snr_vol = data[..., 0] if data.ndim == 4 else data
+    if median_filter_size and median_filter_size > 1:
+        snr_vol = median_filter(snr_vol, size=median_filter_size)
+    return snr_vol
+
+
+def make_triplanar_colorbar_data_uri(vol3d, cmap="viridis", vmin=0, vmax=None,
+                                      cbar_label="", max_width=1000):
+    views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
+    fig, axes = plt.subplots(1, 3, figsize=(3 * 4, 4.4), facecolor="black")
+    im = None
+    for ax_, (label, axis) in zip(axes, views):
+        sl = extract_slice(vol3d, axis)
+        im = ax_.imshow(sl, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax_.axis("off")
+        ax_.set_title(label, color=MUTED, fontsize=11)
+    cbar = fig.colorbar(im, ax=axes, fraction=0.025, pad=0.02)
+    cbar.set_label(cbar_label, color=MUTED)
+    cbar.ax.yaxis.set_tick_params(color=MUTED)
+    plt.setp(cbar.ax.get_yticklabels(), color=MUTED)
+    cbar.outline.set_edgecolor(GRID)
+    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.92, top=0.9, bottom=0.005)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+
+def snr_map_block(cnr_maps_path):
+    """Derives and renders the b0 SNR map (with colorbar) directly from eddy's
+    CNR-maps NIfTI, in place of eddy_quad's static, colorbar-less PNG."""
+    snr_vol = compute_snr_map(cnr_maps_path)
+    positive = snr_vol[snr_vol > 0]
+    vmax = float(np.percentile(positive, 99)) if positive.size else None
+
+    img_uri = make_triplanar_colorbar_data_uri(
+        snr_vol, cmap="viridis", vmin=0, vmax=vmax, cbar_label="SNR (mean / std)"
+    )
+
+    return f"""
+    <div class="slice-block">
+      <h3>SNR Map (b0)</h3>
+      <p class="qc-desc">Voxel-wise signal-to-noise ratio (the mean divided by the standard
+      deviation across the b0 volumes), taken from the first volume of eddy's CNR-maps
+      output and median-filtered to reduce the influence of random noise and small
+      misalignment. As a rule of thumb from Tahedl, Tournier &amp; Smith (2025,
+      <em>Nature Protocols</em> 20(9):2652&ndash;2684), it's worth checking the SNR in
+      regions that are typically low, such as the temporal lobes: if it's still
+      reasonably high there, it implies it's high enough everywhere else. In their
+      experience, an SNR of roughly 15 in such a region is acceptable for most
+      analyses.</p>
+      <img src="{img_uri}" class="mosaic" alt="SNR map, axial/coronal/sagittal, with colorbar"/>
+    </div>
     """
 
 
 def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
-                    raw_dwi_path=None, preproc_dwi_path=None,
+                    raw_dwi_path=None, preproc_dwi_path=None, cnr_maps_path=None,
                     mot_abs_thresh=1.0, mot_rel_thresh=0.5, outlier_pct_thresh=5.0):
     """Section for FSL eddy_quad outputs: qc.json + *.eddy_movement_rms +
     *.eddy_outlier_report + the eddy_quad summary PNGs (avg_b0*.png,
@@ -475,8 +551,9 @@ def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
         </details>
         """
 
-    image_items = collect_eddyqc_images(qc_dir, bvals)
-    images_html = eddyqc_images_html(image_items)
+    snr_html = snr_map_block(cnr_maps_path) if cnr_maps_path else ""
+    image_items = collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=bool(cnr_maps_path))
+    images_html = eddyqc_images_html(image_items, extra_prefix_html=snr_html)
     outlier_volumes_html = outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers)
     ack_html = eddyqc_acknowledgment(qc.get("eddy_input"))
 
@@ -617,6 +694,72 @@ def make_triplanar_data_uri(vol3d, vmin, vmax, overlay_vol=None, overlay_absmax=
     optimized = optimize_png_bytes(buf.read(), max_width=max_width)
     b64 = base64.b64encode(optimized).decode("utf-8")
     return f"data:image/png;base64,{b64}"
+
+
+def make_triplanar_contour_data_uri(base_vol, mask_vol, vmin, vmax, contour_color="#ff4f4f",
+                                     max_width=1000):
+    """Axial/coronal/sagittal mid-slices with the mask boundary drawn as a
+    contour outline on top -- keeps the underlying anatomy fully visible,
+    unlike a filled translucent overlay."""
+    views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
+    fig, axes = plt.subplots(1, 3, figsize=(3 * 4, 4.4), facecolor="black")
+    for ax_, (label, axis) in zip(axes, views):
+        base_sl = extract_slice(base_vol, axis)
+        mask_sl = extract_slice(mask_vol, axis)
+        ax_.imshow(base_sl, cmap="gray", vmin=vmin, vmax=vmax)
+        if np.any(mask_sl > 0.5):
+            ax_.contour(mask_sl, levels=[0.5], colors=[contour_color], linewidths=1.3)
+        ax_.axis("off")
+        ax_.set_title(label, color=MUTED, fontsize=11)
+    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.995, top=0.9, bottom=0.005)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+
+def brainmask_section(nodif_path, mask_path):
+    """QC for the brain mask: its boundary overlaid as a contour on the nodif
+    (b0) reference image, across all three views."""
+    nodif = nib.load(str(nodif_path)).get_fdata()
+    if nodif.ndim == 4:
+        nodif = nodif.mean(axis=-1)
+    mask = nib.load(str(mask_path)).get_fdata()
+
+    positive = nodif[nodif > 0]
+    vmin, vmax = np.percentile(positive, [1, 99]) if positive.size else (None, None)
+
+    img_uri = make_triplanar_contour_data_uri(nodif, mask, vmin, vmax)
+
+    mask_voxels = int(np.sum(mask > 0.5))
+    total_voxels = int(mask.size)
+    coverage_pct = 100 * mask_voxels / total_voxels if total_voxels else 0
+
+    return f"""
+    <section id="brainmask" class="qc-section">
+      <h2>Brain Mask</h2>
+      <p class="qc-desc">The brain mask boundary (red outline) overlaid on the nodif (b0)
+      reference image. Check that the outline hugs the brain surface without clipping
+      cortex (especially at the vertex and cerebellum) and without including obvious
+      skull, dura, or eyes.</p>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-label">Mask Volume</div>
+          <div class="stat-value">{mask_voxels:,} vox</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Mask Coverage</div>
+          <div class="stat-value">{coverage_pct:.1f}%</div>
+        </div>
+      </div>
+      <div class="slice-block">
+        <img src="{img_uri}" class="mosaic" alt="brain mask overlay on nodif, axial/coronal/sagittal"/>
+      </div>
+    </section>
+    """
 
 
 def find_matching_pe_index(topup_pe_items, dwi_acqparams_path):
@@ -856,6 +999,15 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     background: #262b32;
     border-color: var(--accent);
   }}
+  nav a.nav-sublink {{
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 0.4rem 0.7rem;
+    margin-left: -0.3rem;
+  }}
+  nav a.nav-sublink::before {{
+    content: "\2192  ";
+  }}
   main {{
     max-width: 1200px;
     margin: 0 auto;
@@ -931,6 +1083,9 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     border-top: 1px solid #262b32;
     font-size: 1rem;
     color: var(--text);
+  }}
+  .subsection-anchor {{
+    scroll-margin-top: 70px;
   }}
   .ack-box {{
     margin-top: 1.75rem;
@@ -1026,9 +1181,19 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def build_report(sections, output_path, subject=None):
+def build_report(sections, output_path, subject=None, extra_nav=None):
+    """extra_nav: list of (after_section_id, anchor_id, label) tuples for nav
+    buttons that point to a subsection anchor rather than a full <section>,
+    inserted right after their parent section's nav link."""
     subject_suffix = f" &mdash; {subject}" if subject else ""
-    nav_links = "\n  ".join(f'<a href="#{sid}">{label}</a>' for sid, label, _ in sections)
+    extra_nav = extra_nav or []
+    nav_parts = []
+    for sid, label, _ in sections:
+        nav_parts.append(f'<a href="#{sid}">{label}</a>')
+        for after_id, anchor_id, sub_label in extra_nav:
+            if after_id == sid:
+                nav_parts.append(f'<a href="#{anchor_id}" class="nav-sublink">{sub_label}</a>')
+    nav_links = "\n  ".join(nav_parts)
     body = "\n".join(html for _, _, html in sections)
     page = PAGE_TEMPLATE.format(subject_suffix=subject_suffix, nav_links=nav_links, sections=body)
     Path(output_path).write_text(page)
@@ -1064,23 +1229,34 @@ def main():
                          "shares the DWI's phase-encode direction.")
     p.add_argument("--topup-match-pe-index", type=int, default=None,
                     help="Manual override: skip PE matching and use this topup input volume index.")
+    p.add_argument("--brainmask-nodif", default=None,
+                    help="Nodif (b0) reference image, e.g. *_desc-nodif_dwi.nii.gz or "
+                         "*_desc-nodif-brain_dwi.nii.gz")
+    p.add_argument("--brainmask-mask", default=None,
+                    help="Brain mask, e.g. *_desc-brain_mask.nii.gz")
+    p.add_argument("--eddy-cnr-maps", default=None,
+                    help="eddy's CNR-maps 4D volume, e.g. *_label-cnr-maps_desc-preproc_dwi.nii.gz. "
+                         "Volume 0 is the b0 SNR map (mean/std across b0 volumes) -- used to render "
+                         "an SNR map with a colorbar in place of eddy_quad's static b0 SNR PNG.")
     p.add_argument("--output", default="qc_report.html", help="Output HTML path")
     p.add_argument("--subject", default=None, help="Subject label, e.g. sub-01")
     args = p.parse_args()
 
-    # Add more sections here as your pipeline grows, e.g.:
-    # ("brainmask", "Brain Mask", brainmask_section(args.dwi, args.mask)),
     sections = [
         ("noise", "Noise Map", noise_section(args.noise)),
     ]
 
+    extra_nav = []
+
     if args.eddy_json and args.eddy_rms:
-        sections.append(
-            ("eddyqc", "Eddy QC", eddyqc_section(
-                args.eddy_json, args.eddy_rms, args.eddy_outliers, qc_dir=args.eddy_qc_dir,
-                raw_dwi_path=args.eddy_raw_dwi, preproc_dwi_path=args.eddy_preproc_dwi,
-            ))
+        eddyqc_html = eddyqc_section(
+            args.eddy_json, args.eddy_rms, args.eddy_outliers, qc_dir=args.eddy_qc_dir,
+            raw_dwi_path=args.eddy_raw_dwi, preproc_dwi_path=args.eddy_preproc_dwi,
+            cnr_maps_path=args.eddy_cnr_maps,
         )
+        sections.append(("eddyqc", "Eddy QC", eddyqc_html))
+        if 'id="outliervol"' in eddyqc_html:
+            extra_nav.append(("eddyqc", "outliervol", "Outlier Volumes"))
 
     if args.topup_before and args.topup_after and args.topup_acqparams:
         sections.append(
@@ -1092,7 +1268,12 @@ def main():
             ))
         )
 
-    build_report(sections, args.output, subject=args.subject)
+    if args.brainmask_nodif and args.brainmask_mask:
+        sections.append(
+            ("brainmask", "Brain Mask", brainmask_section(args.brainmask_nodif, args.brainmask_mask))
+        )
+
+    build_report(sections, args.output, subject=args.subject, extra_nav=extra_nav)
     print(f"Wrote {args.output}")
 
 

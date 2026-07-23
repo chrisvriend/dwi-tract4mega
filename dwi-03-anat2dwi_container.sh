@@ -152,11 +152,11 @@ dwiref="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-
 dwirefbrain="${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
 
 #back-up before modifying the sform/qform of the reference brain to avoid issues with flirt
-cp ${dwiref} ${dwiref}.orig
-cp ${dwirefbrain} ${dwirefbrain}.orig 
+# cp ${dwiref} ${dwiref}.orig
+# cp ${dwirefbrain} ${dwirefbrain}.orig 
 
-fslorient -copysform2qform ${dwiref}
-fslorient -copysform2qform ${dwirefbrain}
+# fslorient -copysform2qform ${dwiref}
+# fslorient -copysform2qform ${dwirefbrain}
 
 
 # --- FreeSurfer block ---
@@ -239,6 +239,10 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
             -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz"
+        # CHANGE 1 (line 193): fix strides of T1w in DWI space to match template
+        mrconvert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz" \
+            -strides "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz" -force
         
         rsync -av "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
@@ -336,6 +340,10 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
             regrid -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             -interp nearest \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" -force
+        # CHANGE 2 (line 290): fix strides of 5tt-hsvs to match template (new-FS branch)
+        mrconvert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
+            -strides "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" -force
 
         rm -rf "${workdir}/${subj}/temp_5ttgen"
         cd ${workdir}/${subj}/ # get out temp directory
@@ -345,6 +353,10 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
         5tt2gmwmi "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
             -nthreads "${nthreads}" -info -force
+        # CHANGE 3 (line 302): fix strides of gmwm to match template (new-FS branch)
+        mrconvert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" \
+            -strides "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-gmwm_probseg.nii.gz" -force
     fi
     
     for label in 5tt-hsvs gmwm; do
@@ -490,7 +502,10 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
             -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             -interp nearest \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" -force
-           
+            # CHANGE 4 (line 437): fix strides of 5tt-hsvs/gmwm/wm to match template (existing-FS branch)
+            mrconvert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" \
+                -strides "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+                "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-${label}_probseg.nii.gz" -force
 
             echo "{
             \"Resolution\": \"based on T1w from existing FreeSurfer output \",
@@ -504,6 +519,10 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
             -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
             -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz"
+        # CHANGE 5 (line 455): fix strides of QC T1w in DWI space to match template (existing-FS branch)
+        mrconvert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz" \
+            -strides "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz" -force
 
          echo "{
             \"Resolution\": \"based on T1w from existing FreeSurfer output \",
@@ -648,22 +667,6 @@ for atlas in BNA 300P7N; do
         [[ -z "${ID}" ]] && { log "$RED" "Atlas not found!"; exit 1; }
     fi
 
-    # deprecated code for registering atlas to dwi space using FreeSurfer's bbregister, but leaving here for now for reference and in case we want to use it again.
-    # if [[ ! -f "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" && -f "${SUBJECTS_DIR}/${subj}/scripts/T1w-2-dwi.done" ]]; then
-    #     mri_convert --in_type mgz --out_type nii \
-    #         --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-    #         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
-    # else
-    #     mri_vol2vol --mov "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
-    #         --targ "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-    #         --o "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
-    #         --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --inv --no-save-reg --interp nearest \
-    #         --no-resample
-
-    #     fslreorient2std "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
-    #         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
-    # fi
-
     if [[ -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
         mri_convert --in_type mgz --out_type nii \
             --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
@@ -671,6 +674,10 @@ for atlas in BNA 300P7N; do
         mrgrid "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_atlas-${atlas}_temp.nii.gz" \
             regrid -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             -interp nearest \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" -force
+        # CHANGE 6 (line 596): fix strides of atlas temp file to match template (T1w-2-dwi.done branch)
+        mrconvert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
+            -strides "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" -force
         rm "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}res-FS_atlas-${atlas}_temp.nii.gz"
     else
@@ -681,6 +688,10 @@ for atlas in BNA 300P7N; do
             -linear "${workdir}/${subj}${sessionpath}xfms/${subj}${sessionfile}desc-mrtrix_T1w-2-dwi.txt" \
             -template "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             -interp nearest \
+            "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" -force
+        # CHANGE 7 (line 612): fix strides of atlas temp file to match template (existing-FS branch)
+        mrconvert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
+            -strides "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" -force
         rm "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz"
     fi
@@ -695,26 +706,13 @@ for atlas in BNA 300P7N; do
         "${atlaspath}/${ID}_orig.txt" \
         "${atlaspath}/${ID}_modified.txt" \
         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" -force
+    # CHANGE 8 (line 630): fix strides of final atlas dseg to match template
+    mrconvert "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" \
+        -strides "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
+        "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" -force
 
     rm "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
 
-    # QC registration of atlas to dwi
-    # "${scriptdir}/check_atlasreg.py" \
-    #     --subjid "${subj}${sessionfile}" \
-    #     --atlas "${atlas}" \
-    #     --atlas_image "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" \
-    #     --nodif "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
-    #     --output "${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
-
-       
-    # fslstats -K "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" \
-    #     "${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz" \
-    #     -V > roivols.txt
-
-    # labelfile="${atlaspath}/${ID}_modified.txt"
-    # grep -v "Unknown" "${labelfile}" | awk '{ print $1,$2 }' > labels.txt
-    # paste labels.txt roivols.txt > "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_roivols.tsv"
-    # rm roivols.txt labels.txt
 done
 
 # Transfer files
@@ -731,4 +729,3 @@ fi
 log "$GREEN" "-----------------------------------"
 log "$GREEN"  "finished anat2dwi subject = ${subj}"
 log "$GREEN"  "-----------------------------------"
-echo

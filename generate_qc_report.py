@@ -4,6 +4,10 @@ Generate an fMRIPrep-style QC HTML report for DWI preprocessing outputs.
 
 Currently implements:
   - Noise map section (dwidenoise output)
+  - Eddy QC section (eddy_quad)
+  - Topup / susceptibility distortion correction QC
+  - Brainmask QC
+  - T1–DWI coregistration QC with optional 5tt2vis overlay
 
 Designed to be extended: add a new `..._section(path)` function that
 returns an HTML string, and append it to the `sections` list in main().
@@ -35,7 +39,6 @@ GRID = "#2a2f36"
 ACCENT = "#4fa3ff"
 ACCENT2 = "#ff9f4f"
 
-
 # --------------------------------------------------------------------------
 # Image helpers
 # --------------------------------------------------------------------------
@@ -46,7 +49,6 @@ def load_volume(path):
     if data.ndim == 4:
         data = data[..., 0]
     return data
-
 
 def make_mosaic(data, axis, n_slices=7, cmap="gray", vmin=None, vmax=None):
     """Mosaic of evenly spaced slices along `axis` (0=sagittal, 1=coronal, 2=axial)."""
@@ -67,7 +69,6 @@ def make_mosaic(data, axis, n_slices=7, cmap="gray", vmin=None, vmax=None):
     fig.subplots_adjust(wspace=0.02, hspace=0, left=0, right=1, top=1, bottom=0)
     return fig
 
-
 def optimize_png_bytes(png_bytes, max_width=1000):
     """Downscale (if wider than max_width) and PNG-optimize image bytes.
     This is what keeps the self-contained HTML from ballooning in size --
@@ -82,7 +83,6 @@ def optimize_png_bytes(png_bytes, max_width=1000):
     im.save(out, format="PNG", optimize=True, compress_level=9)
     return out.getvalue()
 
-
 def fig_to_base64(fig, max_width=1000):
     buf = BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.05,
@@ -91,7 +91,6 @@ def fig_to_base64(fig, max_width=1000):
     buf.seek(0)
     optimized = optimize_png_bytes(buf.read(), max_width=max_width)
     return base64.b64encode(optimized).decode("utf-8")
-
 
 # --------------------------------------------------------------------------
 # QC sections -- add new ones here following the same pattern
@@ -129,11 +128,9 @@ def noise_section(noise_path):
     </section>
     """
 
-
 def load_eddy_qc_json(path):
     with open(path) as f:
         return json.load(f)
-
 
 def load_movement_rms(path):
     """temp.eddy_movement_rms: two unlabeled columns, one row per volume:
@@ -141,12 +138,10 @@ def load_movement_rms(path):
     data = np.loadtxt(path)
     return data[:, 0], data[:, 1]
 
-
 _OUTLIER_RE = re.compile(
     r"Slice (\d+) in scan (\d+) is an outlier with mean ([-\d.]+) standard "
     r"deviations off, and mean squared ([-\d.]+) standard deviations off\."
 )
-
 
 def parse_outlier_report(path):
     """temp.eddy_outlier_report: one free-text line per outlier slice."""
@@ -166,16 +161,13 @@ def parse_outlier_report(path):
             })
     return outliers
 
-
 def _find_qc_image(qc_dir, filename):
     p = Path(qc_dir) / filename
     return p if p.exists() else None
 
-
 def _img_file_to_base64(path, max_width=1000):
     optimized = optimize_png_bytes(Path(path).read_bytes(), max_width=max_width)
     return base64.b64encode(optimized).decode("utf-8")
-
 
 def collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=False):
     """Locate and describe the eddy_quad summary PNGs, if present in qc_dir.
@@ -204,7 +196,7 @@ def collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=False):
         p = _find_qc_image(qc_dir, f"avg_b{int(bval)}.png")
         if p:
             items.append((f"Average b={int(bval)} shell", p,
-                f"Average of all diffusion-weighted volumes in the b={int(bval)} s/mm\u00b2 "
+                f"Average of all diffusion-weighted volumes in the b={int(bval)} s/mm² "
                 "shell after eddy current and motion correction."))
 
     # CNR maps follow eddy_quad's convention: index 0 is the b0 SNR map,
@@ -220,7 +212,7 @@ def collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=False):
                         "derived from eddy's predicted signal and the model residuals.")
             else:
                 desc = (f"Voxel-wise contrast-to-noise ratio map for the b={int(bvals[i-1])} "
-                        "s/mm\u00b2 shell. Low CNR in white matter can indicate poor angular "
+                        "s/mm² shell. Low CNR in white matter can indicate poor angular "
                         "contrast for downstream tractography or microstructure modelling.")
             items.append((f"{label} map", p, desc))
 
@@ -229,7 +221,6 @@ def collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=False):
     # before/after comparison and overlay.
 
     return items
-
 
 def eddyqc_images_html(items, extra_prefix_html=""):
     if not items and not extra_prefix_html:
@@ -246,7 +237,6 @@ def eddyqc_images_html(items, extra_prefix_html=""):
     {extra_prefix_html}
     {blocks}
     """
-
 
 def eddyqc_acknowledgment(eddy_input=None):
     repol_note = ""
@@ -274,8 +264,6 @@ def eddyqc_acknowledgment(eddy_input=None):
     </div>
     """
 
-
-
 def _style_axes(ax):
     ax.set_facecolor(DARK_BG)
     ax.tick_params(colors=MUTED)
@@ -284,7 +272,6 @@ def _style_axes(ax):
     for spine in ax.spines.values():
         spine.set_color(GRID)
     ax.grid(alpha=0.15, color=MUTED)
-
 
 def plot_motion_rms(abs_rms, rel_rms):
     n = len(abs_rms)
@@ -301,7 +288,6 @@ def plot_motion_rms(abs_rms, rel_rms):
         text.set_color("#e6e6e6")
     fig.tight_layout()
     return fig
-
 
 def plot_outlier_scatter(outliers, n_vols):
     fig, ax = plt.subplots(figsize=(10, 3), facecolor=DARK_BG)
@@ -326,7 +312,6 @@ def plot_outlier_scatter(outliers, n_vols):
     _style_axes(ax)
     fig.tight_layout()
     return fig
-
 
 def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
     """For each volume flagged in the outlier report, build a raw (pre-eddy) vs
@@ -415,7 +400,6 @@ def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
     </div>
     """
 
-
 def compute_snr_map(cnr_maps_path, median_filter_size=3):
     """Volume 0 of eddy's CNR-maps output is the b0 SNR map (mean / std across
     the b0 volumes, per eddy_quad's convention). A light median filter reduces
@@ -426,7 +410,6 @@ def compute_snr_map(cnr_maps_path, median_filter_size=3):
     if median_filter_size and median_filter_size > 1:
         snr_vol = median_filter(snr_vol, size=median_filter_size)
     return snr_vol
-
 
 def make_triplanar_colorbar_data_uri(vol3d, cmap="viridis", vmin=0, vmax=None,
                                       cbar_label="", max_width=1000):
@@ -451,7 +434,6 @@ def make_triplanar_colorbar_data_uri(vol3d, cmap="viridis", vmin=0, vmax=None,
     optimized = optimize_png_bytes(buf.read(), max_width=max_width)
     b64 = base64.b64encode(optimized).decode("utf-8")
     return f"data:image/png;base64,{b64}"
-
 
 def snr_map_block(cnr_maps_path):
     """Derives and renders the b0 SNR map (with colorbar) directly from eddy's
@@ -479,7 +461,6 @@ def snr_map_block(cnr_maps_path):
       <img src="{img_uri}" class="mosaic" alt="SNR map, axial/coronal/sagittal, with colorbar"/>
     </div>
     """
-
 
 def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
                     raw_dwi_path=None, preproc_dwi_path=None, cnr_maps_path=None,
@@ -590,7 +571,6 @@ def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
     </section>
     """
 
-
 # --------------------------------------------------------------------------
 # Topup / susceptibility distortion correction QC
 # --------------------------------------------------------------------------
@@ -606,7 +586,6 @@ def read_acqparams(path):
             rows.append(tuple(float(x) for x in parts[:3]))
     return rows
 
-
 def pick_pe_volume_indices(acq_rows):
     """First volume index for each distinct phase-encode direction, in the
     order first encountered. Returns list of (pe_vector, index) tuples."""
@@ -616,14 +595,11 @@ def pick_pe_volume_indices(acq_rows):
             seen[pe] = i
     return sorted(seen.items(), key=lambda kv: kv[1])
 
-
 def load_4d_volume(path):
     return nib.load(str(path)).get_fdata()
 
-
 def get_vol(data, idx):
     return data[..., idx] if data.ndim == 4 else data
-
 
 def extract_slice(vol3d, axis, frac=0.5):
     """axis: 0=sagittal, 1=coronal, 2=axial."""
@@ -637,7 +613,6 @@ def extract_slice(vol3d, axis, frac=0.5):
         sl = vol3d[:, :, idx]
     return np.rot90(sl)
 
-
 def slice_to_data_uri(slice2d, vmin=None, vmax=None, cmap="gray", max_width=500):
     fig, ax = plt.subplots(figsize=(4, 4), facecolor="black")
     ax.imshow(slice2d, cmap=cmap, vmin=vmin, vmax=vmax)
@@ -650,7 +625,6 @@ def slice_to_data_uri(slice2d, vmin=None, vmax=None, cmap="gray", max_width=500)
     optimized = optimize_png_bytes(buf.read(), max_width=max_width)
     b64 = base64.b64encode(optimized).decode("utf-8")
     return f"data:image/png;base64,{b64}"
-
 
 def slice_overlay_to_data_uri(base_slice, overlay_slice, vmin, vmax, overlay_absmax,
                                overlay_cmap="bwr", alpha=0.55, max_width=500):
@@ -669,7 +643,6 @@ def slice_overlay_to_data_uri(base_slice, overlay_slice, vmin, vmax, overlay_abs
     optimized = optimize_png_bytes(buf.read(), max_width=max_width)
     b64 = base64.b64encode(optimized).decode("utf-8")
     return f"data:image/png;base64,{b64}"
-
 
 def make_triplanar_data_uri(vol3d, vmin, vmax, overlay_vol=None, overlay_absmax=None,
                              cmap="gray", overlay_cmap="bwr", alpha=0.55, max_width=1000):
@@ -695,7 +668,6 @@ def make_triplanar_data_uri(vol3d, vmin, vmax, overlay_vol=None, overlay_absmax=
     b64 = base64.b64encode(optimized).decode("utf-8")
     return f"data:image/png;base64,{b64}"
 
-
 def make_triplanar_contour_data_uri(base_vol, mask_vol, vmin, vmax, contour_color="#ff4f4f",
                                      max_width=1000):
     """Axial/coronal/sagittal mid-slices with the mask boundary drawn as a
@@ -719,7 +691,6 @@ def make_triplanar_contour_data_uri(base_vol, mask_vol, vmin, vmax, contour_colo
     optimized = optimize_png_bytes(buf.read(), max_width=max_width)
     b64 = base64.b64encode(optimized).decode("utf-8")
     return f"data:image/png;base64,{b64}"
-
 
 def brainmask_section(nodif_path, mask_path):
     """QC for the brain mask: its boundary overlaid as a contour on the nodif
@@ -761,6 +732,208 @@ def brainmask_section(nodif_path, mask_path):
     </section>
     """
 
+# --------------------------------------------------------------------------
+# New: T1–DWI coregistration QC section
+# --------------------------------------------------------------------------
+
+def coreg_section(t1w_dwi_path, nodif_path, five_tt_vis_path=None):
+    """
+    Coregistration QC between a T1w image in DWI space and a regridded nodif (b0)
+    in the same space, with optional 5tt2vis overlay.
+
+    - Shows axial, coronal, sagittal mid-slices (triplanar).
+    - Slider smoothly cross-fades between T1w and nodif (nodif on top).
+    - Optional checkbox toggles 5tt2vis overlay on whichever image is being shown.
+    """
+    # Load volumes
+    t1 = nib.load(str(t1w_dwi_path)).get_fdata()
+    nodif = nib.load(str(nodif_path)).get_fdata()
+
+    # Collapse 4D to mean across time if needed
+    if t1.ndim == 4:
+        t1 = t1.mean(axis=-1)
+    if nodif.ndim == 4:
+        nodif = nodif.mean(axis=-1)
+
+    if t1.shape != nodif.shape:
+        return f"""
+        <section id="coreg" class="qc-section">
+          <h2>T1–DWI Coregistration</h2>
+          <p class="qc-desc">
+            Could not render coregistration QC: T1w-in-DWI-space image
+            (shape {t1.shape}) and regridded nodif (shape {nodif.shape})
+            have different dimensions.
+          </p>
+        </section>
+        """
+
+    # Intensity scaling: separate percentiles for T1 and nodif
+    t1_positive = t1[t1 > 0]
+    nodif_positive = nodif[nodif > 0]
+
+    t1_vmin, t1_vmax = (
+        np.percentile(t1_positive, [2, 98]) if t1_positive.size else (None, None)
+    )
+    nodif_vmin, nodif_vmax = (
+        np.percentile(nodif_positive, [1, 99]) if nodif_positive.size else (None, None)
+    )
+
+    # Triplanar images:
+    # - T1w: grayscale
+    # - nodif: non-grayscale (magma) to highlight hyperintense CSF
+    t1_uri = make_triplanar_data_uri(t1, t1_vmin, t1_vmax, cmap="gray")
+    nodif_uri = make_triplanar_data_uri(nodif, nodif_vmin, nodif_vmax, cmap="magma")
+
+    has_overlay = five_tt_vis_path is not None
+
+    if has_overlay:
+        five_tt = nib.load(str(five_tt_vis_path)).get_fdata()
+        if five_tt.ndim == 4:
+            five_tt = five_tt.mean(axis=-1)
+
+        if five_tt.shape != t1.shape:
+            # Overlay shape mismatch: disable overlay but explain why
+            has_overlay = False
+            overlay_expl = f"""
+            <p class="qc-desc">
+              Note: 5tt2vis overlay was not drawn because its shape ({five_tt.shape})
+              does not match the T1/nodif grid ({t1.shape}).
+            </p>
+            """
+            t1_overlay_uri = t1_uri
+            nodif_overlay_uri = nodif_uri
+        else:
+            pos = five_tt[five_tt > 0]
+            ov_absmax = float(np.percentile(pos, 99)) if pos.size else 1.0
+
+            t1_overlay_uri = make_triplanar_data_uri(
+                t1,
+                t1_vmin,
+                t1_vmax,
+                overlay_vol=five_tt,
+                overlay_absmax=ov_absmax,
+                cmap="gray",
+                overlay_cmap="tab10",
+                alpha=0.6,
+            )
+            nodif_overlay_uri = make_triplanar_data_uri(
+                nodif,
+                nodif_vmin,
+                nodif_vmax,
+                overlay_vol=five_tt,
+                overlay_absmax=ov_absmax,
+                cmap="magma",
+                overlay_cmap="tab10",
+                alpha=0.6,
+            )
+
+            overlay_expl = """
+            <p class="qc-desc">
+              The tissue-type overlay comes from <code>5tt2vis</code>, drawn on top of
+              the current base image (T1 or nodif) using a qualitative colormap.
+              This makes it easier to judge whether GM/WM boundaries from the
+              segmentation follow the anatomy in both contrasts.
+            </p>
+            """
+    else:
+        overlay_expl = ""
+        t1_overlay_uri = t1_uri
+        nodif_overlay_uri = nodif_uri
+
+    view_data = {
+        "t1_plain": t1_uri,
+        "nodif_plain": nodif_uri,
+        "t1_overlay": t1_overlay_uri,
+        "nodif_overlay": nodif_overlay_uri,
+        "has_overlay": has_overlay,
+        "t1_label": "T1w in DWI space",
+        "nodif_label": "Nodif (b0, regridded to DWI space)",
+    }
+
+    overlay_control = ""
+    if has_overlay:
+        overlay_control = """
+          <label class="overlay-toggle">
+            <input type="checkbox" id="coreg-overlay" onchange="updateCoregView()">
+            Show 5tt2vis tissue-type overlay
+          </label>
+        """
+
+    block = f"""
+    <div class="slice-block">
+      <div class="coreg-stack">
+        <img id="coreg-t1-img" class="mosaic slider-img coreg-base" src="{t1_uri}"
+             alt="T1w in DWI space, axial/coronal/sagittal"/>
+        <img id="coreg-nodif-img" class="mosaic slider-img coreg-overlay-img" src="{nodif_uri}"
+             alt="Nodif (b0, DWI space), axial/coronal/sagittal" style="opacity: 0;">
+      </div>
+      <div class="topup-slider-row">
+        <span class="topup-slider-endlabel">T1w</span>
+        <input type="range" min="0" max="1" step="0.02" value="0" class="topup-range"
+               id="coreg-range" oninput="updateCoregView()">
+        <span class="topup-slider-endlabel">Nodif</span>
+      </div>
+      <div class="slider-label" id="coreg-label">T1w in DWI space</div>
+    </div>
+    """
+
+    script = f"""
+    <script>
+      window.coregData = {json.dumps(view_data)};
+      function updateCoregView() {{
+        var d = window.coregData;
+        var alpha = parseFloat(document.getElementById('coreg-range').value);
+        var overlayCb = document.getElementById('coreg-overlay');
+        var showOverlay = overlayCb && overlayCb.checked && d.has_overlay;
+
+        var t1Img = document.getElementById('coreg-t1-img');
+        var nodifImg = document.getElementById('coreg-nodif-img');
+        var labelEl = document.getElementById('coreg-label');
+
+        if (showOverlay) {{
+          t1Img.src = d.t1_overlay;
+          nodifImg.src = d.nodif_overlay;
+        }} else {{
+          t1Img.src = d.t1_plain;
+          nodifImg.src = d.nodif_plain;
+        }}
+
+        // Cross-fade: T1 bottom, nodif on top
+        nodifImg.style.opacity = alpha.toString();
+        t1Img.style.opacity = (1.0 - alpha).toString();
+
+        // Label reflects which image dominates visually
+        var baseLabel = alpha < 0.5 ? d.t1_label : d.nodif_label;
+        if (showOverlay) {{
+          labelEl.innerHTML = baseLabel + " + 5tt2vis overlay";
+        }} else {{
+          labelEl.innerHTML = baseLabel;
+        }}
+      }}
+    </script>
+    """
+
+    return f"""
+    <section id="coreg" class="qc-section">
+      <h2>T1–DWI Coregistration</h2>
+      <p class="qc-desc">
+        Drag the slider to smoothly transition between the T1w image in DWI space and the
+        regridded nodif (b0) in the same space, across axial, coronal and sagittal
+        mid-slices. Borders between CSF and GM/WM, especially around the ventricles
+        and cortical ribbon, should align well in both contrasts if coregistration
+        is satisfactory. The nodif is shown with a non-grayscale colormap to make the
+        hyperintense CSF stand out.
+      </p>
+      {overlay_expl}
+      {overlay_control}
+      {block}
+      {script}
+    </section>
+    """
+
+# --------------------------------------------------------------------------
+# Topup helpers continued
+# --------------------------------------------------------------------------
 
 def find_matching_pe_index(topup_pe_items, dwi_acqparams_path):
     """Match the DWI's own phase-encode direction (first row of its
@@ -780,7 +953,6 @@ def find_matching_pe_index(topup_pe_items, dwi_acqparams_path):
             return vec, idx, True
     vec, idx = topup_pe_items[0]
     return vec, idx, False
-
 
 def topup_section(before_path, after_path, topup_acqparams_path,
                    fieldmap_path=None, dwi_acqparams_path=None, matched_pe_index=None):
@@ -945,7 +1117,6 @@ def topup_section(before_path, after_path, topup_acqparams_path,
     </section>
     """
 
-
 # --------------------------------------------------------------------------
 # Page assembly
 # --------------------------------------------------------------------------
@@ -1006,7 +1177,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     margin-left: -0.3rem;
   }}
   nav a.nav-sublink::before {{
-    content: "\2192  ";
+    content: "\\2192  ";
   }}
   main {{
     max-width: 1200px;
@@ -1166,6 +1337,16 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     border-radius: 6px;
     padding: 0.6rem 0.9rem;
   }}
+  /* Coregistration stack: T1 base, nodif overlay */
+  .coreg-stack {{
+    position: relative;
+  }}
+  .coreg-stack .coreg-overlay-img {{
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin-bottom: 0;
+  }}
 </style>
 </head>
 <body>
@@ -1179,7 +1360,6 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>
 """
-
 
 def build_report(sections, output_path, subject=None, extra_nav=None):
     """extra_nav: list of (after_section_id, anchor_id, label) tuples for nav
@@ -1197,7 +1377,6 @@ def build_report(sections, output_path, subject=None, extra_nav=None):
     body = "\n".join(html for _, _, html in sections)
     page = PAGE_TEMPLATE.format(subject_suffix=subject_suffix, nav_links=nav_links, sections=body)
     Path(output_path).write_text(page)
-
 
 def main():
     p = argparse.ArgumentParser(description="Generate DWI preprocessing QC HTML report")
@@ -1238,6 +1417,33 @@ def main():
                     help="eddy's CNR-maps 4D volume, e.g. *_label-cnr-maps_desc-preproc_dwi.nii.gz. "
                          "Volume 0 is the b0 SNR map (mean/std across b0 volumes) -- used to render "
                          "an SNR map with a colorbar in place of eddy_quad's static b0 SNR PNG.")
+
+    # New: T1–DWI coregistration inputs
+    p.add_argument(
+        "--reg-t1w-dwi",
+        default=None,
+        help=(
+            "T1w image already in DWI space "
+            "(e.g. *desc-preproc_T1w_space-dwi.nii.gz), used for T1–DWI coregistration QC."
+        ),
+    )
+    p.add_argument(
+        "--reg-nodif",
+        default=None,
+        help=(
+            "Nodif (b0) reference image resampled to the same grid as --reg-t1w-dwi "
+            "(e.g. *desc-nodif_space-dwi.nii.gz)."
+        ),
+    )
+    p.add_argument(
+        "--reg-5ttvis",
+        default=None,
+        help=(
+            "Optional 5tt2vis image in the same space as --reg-t1w-dwi, used as a "
+            "tissue-type overlay in the coregistration QC section."
+        ),
+    )
+
     p.add_argument("--output", default="qc_report.html", help="Output HTML path")
     p.add_argument("--subject", default=None, help="Subject label, e.g. sub-01")
     args = p.parse_args()
@@ -1273,9 +1479,18 @@ def main():
             ("brainmask", "Brain Mask", brainmask_section(args.brainmask_nodif, args.brainmask_mask))
         )
 
+    # New: T1–DWI coregistration section
+    if args.reg_t1w_dwi and args.reg_nodif:
+        sections.append(
+            (
+                "coreg",
+                "T1–DWI Coregistration",
+                coreg_section(args.reg_t1w_dwi, args.reg_nodif, five_tt_vis_path=args.reg_5ttvis),
+            )
+        )
+
     build_report(sections, args.output, subject=args.subject, extra_nav=extra_nav)
     print(f"Wrote {args.output}")
-
 
 if __name__ == "__main__":
     main()

@@ -93,7 +93,7 @@ fi
 if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" ] &&
-   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
 
     log "$GREEN" "Eddy already completed for ${subj} | ${session}"
     log "$GREEN" "skipping"
@@ -272,14 +272,14 @@ cp "${DWIbvals}" \
     "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval"
 mv *.qc eddyqc
 
-# needed for QC 
+# needed for QC (first two might no longer be necessary when parameters are available in json file)
 mv ${DWIout}.eddy_movement_rms ${DWIout}.eddy_outlier_report \
 "${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ./eddyqc
 
 rsync -av eddyqc/*  "${outputdir}/dwi-preproc/${subj}${sessionpath}qc"
 rm -r eddyqc
 
-rsync -av ${subj}${sessionfile}*acqparams.tsv \
+rsync -av ${subj}${sessionfile}*acqparams.tsv "${subj}${sessionfile}space-dwi_desc-preproc.eddy.json" \
 ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 
@@ -287,7 +287,7 @@ ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain
 if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
    [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" ] &&
-   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
+   [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
     
     rm ${workdir}/${subj}${sessionpath}dwi/*desc-preproc* 
     rm "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*meanb0* \

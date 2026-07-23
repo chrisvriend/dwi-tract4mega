@@ -561,7 +561,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
 
     # 5TT2VIS
    5tt2vis "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
-        "${workdir}/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_vis.nii.gz" -force
+        "${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_vis.nii.gz" -force
 
 
     # Transfer to output directory

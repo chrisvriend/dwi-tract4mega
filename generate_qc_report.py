@@ -10,6 +10,7 @@ Currently implements:
   - Response function voxel selection QC (dwi2response -voxels)
   - T1–DWI coregistration QC with optional 5tt2vis overlay
   - Tractogram QC (whole-brain .tck overlaid on T1, colored by fibre orientation)
+  - Atlas connectivity matrix QC (normalized tck2connectome CSV heatmap)
 
 Designed to be extended: add a new `..._section(path)` function that
 returns an HTML string, and append it to the `sections` list in main().
@@ -316,293 +317,6 @@ def plot_outlier_scatter(outliers, n_vols):
     _style_axes(ax)
     fig.tight_layout()
     return fig
-
-def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
-    """For each volume flagged in the outlier report, build a raw (pre-eddy) vs
-    eddy-processed slider comparison. Uses the same triplanar (axial/coronal/
-    sagittal) layout as the topup section -- coronal/sagittal panels are where
-    slice-to-slice artifacts like 'Venetian blind' banding are most visible,
-    since those planes cut across the full stack of axial slices."""
-    if not outliers:
-        return ""
-
-    if not raw_dwi_path or not preproc_dwi_path:
-        return """
-        <div id="outliervol" class="subsection-anchor">
-        <h3 class="subsection-title">Outlier Volume Inspection</h3>
-        <p class="qc-desc">Outlier slices were reported, but the raw and eddy-processed
-        DWI volumes were not provided (<code>--eddy-raw-dwi</code> /
-        <code>--eddy-preproc-dwi</code>), so a visual before/after comparison could not
-        be generated.</p>
-        </div>
-        """
-
-    raw_data = load_4d_volume(raw_dwi_path)
-    proc_data = load_4d_volume(preproc_dwi_path)
-
-    by_scan = {}
-    for o in outliers:
-        by_scan.setdefault(o["scan"], []).append(o)
-
-    blocks = []
-    all_view_data = {}
-    for scan_idx, entries in sorted(by_scan.items()):
-        raw_vol = get_vol(raw_data, scan_idx)
-        proc_vol = get_vol(proc_data, scan_idx)
-
-        both_vals = np.concatenate([raw_vol.flatten(), proc_vol.flatten()])
-        positive = both_vals[both_vals > 0]
-        vmin, vmax = np.percentile(positive, [1, 99]) if positive.size else (None, None)
-
-        before_uri = make_triplanar_data_uri(raw_vol, vmin, vmax)
-        after_uri = make_triplanar_data_uri(proc_vol, vmin, vmax)
-
-        view_id = f"outliervol-{scan_idx}"
-        all_view_data[view_id] = {"before": before_uri, "after": after_uri}
-
-        slice_list = ", ".join(str(e["slice"]) for e in sorted(entries, key=lambda e: e["slice"]))
-        worst = max(abs(e["mean_sq_dev"]) for e in entries)
-
-        blocks.append(f"""
-        <div class="slice-block">
-          <h3>Volume {scan_idx}</h3>
-          <p class="qc-desc">Flagged slice(s): {slice_list} &middot; worst mean-sq.
-          deviation: {worst:.2f}</p>
-          <img id="{view_id}-img" class="mosaic slider-img" src="{before_uri}"
-               alt="volume {scan_idx} raw vs eddy-processed comparison"/>
-          <div class="vtoggle-row">
-            <span class="vtoggle-label-top">Raw</span>
-            <label class="vtoggle">
-              <input type="checkbox" id="{view_id}-range" onchange="updateOutlierVol('{view_id}')">
-              <span class="vtoggle-track"><span class="vtoggle-thumb"></span></span>
-            </label>
-            <span class="vtoggle-label-bottom">Eddy-processed</span>
-          </div>
-        </div>
-        """)
-
-    script = f"""
-    <script>
-      window.outlierVolData = Object.assign(window.outlierVolData || {{}}, {json.dumps(all_view_data)});
-      function updateOutlierVol(id) {{
-        var d = window.outlierVolData[id];
-        var mode = document.getElementById(id + '-range').checked ? 'after' : 'before';
-        document.getElementById(id + '-img').src = d[mode];
-      }}
-    </script>
-    """
-
-    return f"""
-    <div id="outliervol" class="subsection-anchor">
-    <h3 class="subsection-title">Outlier Volume Inspection</h3>
-    <p class="qc-desc">For each volume flagged in the outlier report, drag the slider
-    to compare the raw (pre-eddy) and eddy-processed image. Slice-to-volume or
-    interpolation artifacts &mdash; such as "Venetian blind" banding across slices
-    &mdash; are usually most visible in the coronal/sagittal panels, where alternating
-    bright/dark stripes indicate inconsistent per-slice correction that outlier
-    replacement may not have fully resolved.</p>
-    {"".join(blocks)}
-    {script}
-    </div>
-    """
-
-def compute_snr_map(cnr_maps_path, median_filter_size=3):
-    """Volume 0 of eddy's CNR-maps output is the b0 SNR map (mean / std across
-    the b0 volumes, per eddy_quad's convention). A light median filter reduces
-    the influence of random noise and small misalignment, per Tahedl,
-    Tournier & Smith (2025)."""
-    data = nib.load(str(cnr_maps_path)).get_fdata()
-    snr_vol = data[..., 0] if data.ndim == 4 else data
-    if median_filter_size and median_filter_size > 1:
-        snr_vol = median_filter(snr_vol, size=median_filter_size)
-    return snr_vol
-
-def make_triplanar_colorbar_data_uri(vol3d, cmap="viridis", vmin=0, vmax=None,
-                                      cbar_label="", max_width=1000):
-    views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
-    # Extra figure width is reserved purely for the colorbar (via the smaller
-    # `right` value in subplots_adjust below), so the panels themselves keep
-    # their normal size and the colorbar no longer overlaps the sagittal view.
-    fig, axes = plt.subplots(1, 3, figsize=(3 * 4 + 1.4, 4.4), facecolor="black")
-    im = None
-    for ax_, (label, axis) in zip(axes, views):
-        sl = extract_slice(vol3d, axis)
-        im = ax_.imshow(sl, cmap=cmap, vmin=vmin, vmax=vmax)
-        ax_.axis("off")
-        ax_.set_title(label, color=MUTED, fontsize=11)
-    cbar = fig.colorbar(im, ax=axes, fraction=0.035, pad=0.06)
-    cbar.set_label(cbar_label, color=MUTED)
-    cbar.ax.yaxis.set_tick_params(color=MUTED)
-    plt.setp(cbar.ax.get_yticklabels(), color=MUTED)
-    cbar.outline.set_edgecolor(GRID)
-    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.87, top=0.9, bottom=0.005)
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
-    plt.close(fig)
-    buf.seek(0)
-    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
-    b64 = base64.b64encode(optimized).decode("utf-8")
-    return f"data:image/png;base64,{b64}"
-
-def snr_map_block(cnr_maps_path):
-    """Derives and renders the b0 SNR map (with colorbar) directly from eddy's
-    CNR-maps NIfTI, in place of eddy_quad's static, colorbar-less PNG."""
-    snr_vol = compute_snr_map(cnr_maps_path)
-    positive = snr_vol[snr_vol > 0]
-    vmax = float(np.percentile(positive, 99)) if positive.size else None
-
-    img_uri = make_triplanar_colorbar_data_uri(
-        snr_vol, cmap="viridis", vmin=0, vmax=vmax, cbar_label="SNR (mean / std)"
-    )
-
-    return f"""
-    <div class="slice-block">
-      <h3>SNR Map (b0)</h3>
-      <p class="qc-desc">Voxel-wise signal-to-noise ratio (the mean divided by the standard
-      deviation across the b0 volumes), taken from the first volume of eddy's CNR-maps
-      output and median-filtered to reduce the influence of random noise and small
-      misalignment. As a rule of thumb from Tahedl, Tournier &amp; Smith (2025,
-      <em>Nature Protocols</em> 20(9):2652&ndash;2684), it's worth checking the SNR in
-      regions that are typically low, such as the temporal lobes: if it's still
-      reasonably high there, it implies it's high enough everywhere else. In their
-      experience, an SNR of roughly 15 in such a region is acceptable for most
-      analyses.</p>
-      <img src="{img_uri}" class="mosaic" alt="SNR map, axial/coronal/sagittal, with colorbar"/>
-    </div>
-    """
-
-def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
-                    raw_dwi_path=None, preproc_dwi_path=None, cnr_maps_path=None,
-                    mot_abs_thresh=1.0, mot_rel_thresh=0.5, outlier_pct_thresh=5.0):
-    """Section for FSL eddy_quad outputs: qc.json + *.eddy_movement_rms +
-    *.eddy_outlier_report + the eddy_quad summary PNGs (avg_b0*.png,
-    avg_b<value>.png, cnr####.nii.gz.png), looked up in qc_dir
-    (defaults to the directory containing json_path). If raw_dwi_path and
-    preproc_dwi_path are given, also builds a raw-vs-processed comparison for
-    every volume flagged in the outlier report.
-    Thresholds are conventional soft guidelines, not diagnostic standards --
-    pass your own to override."""
-    qc = load_eddy_qc_json(json_path)
-    abs_rms, rel_rms = load_movement_rms(rms_path)
-    outliers = parse_outlier_report(outlier_path)
-    n_vols = len(abs_rms)
-    qc_dir = qc_dir or Path(json_path).parent
-
-    motion_b64 = fig_to_base64(plot_motion_rms(abs_rms, rel_rms))
-    outlier_b64 = fig_to_base64(plot_outlier_scatter(outliers, n_vols))
-
-    mot_abs = qc.get("qc_mot_abs")
-    mot_rel = qc.get("qc_mot_rel")
-    outlier_pct = qc.get("qc_outliers_tot", 0) * 100
-    bvals = qc.get("data_unique_bvals", [])
-    cnr_avg = qc.get("qc_cnr_avg", [])
-
-    def flag(value, threshold):
-        if value is None:
-            return ""
-        return "stat-bad" if value > threshold else "stat-ok"
-
-    stat_cards = f"""
-      <div class="stat-card {flag(mot_abs, mot_abs_thresh)}">
-        <div class="stat-label">Mean Abs. Motion</div>
-        <div class="stat-value">{mot_abs:.2f} mm</div>
-      </div>
-      <div class="stat-card {flag(mot_rel, mot_rel_thresh)}">
-        <div class="stat-label">Mean Rel. Motion</div>
-        <div class="stat-value">{mot_rel:.2f} mm</div>
-      </div>
-      <div class="stat-card {flag(outlier_pct, outlier_pct_thresh)}">
-        <div class="stat-label">Outlier Slices</div>
-        <div class="stat-value">{outlier_pct:.1f}%</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Volumes (b0 / dwi)</div>
-        <div class="stat-value">{qc.get('data_no_b0_vols', '?')} / {qc.get('data_no_dw_vols', '?')}</div>
-      </div>
-    """
-
-    cnr_cards = ""
-    if cnr_avg:
-        labels = ["b0"] + [f"b={b:g}" for b in bvals]
-        cnr_cards = "".join(
-            f'<div class="stat-card"><div class="stat-label">{lbl} SNR/CNR</div>'
-            f'<div class="stat-value">{val:.2f}</div></div>'
-            for lbl, val in zip(labels, cnr_avg)
-        )
-
-    outlier_raw = ""
-    if outlier_path and Path(outlier_path).exists():
-        raw_text = Path(outlier_path).read_text().strip()
-        n_lines = len(raw_text.splitlines()) if raw_text else 0
-        outlier_raw = f"""
-        <details class="raw-details">
-          <summary>Raw eddy_outlier_report ({n_lines} entries)</summary>
-          <pre>{raw_text if raw_text else "No outliers reported."}</pre>
-        </details>
-        """
-
-    snr_html = snr_map_block(cnr_maps_path) if cnr_maps_path else ""
-    image_items = collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=bool(cnr_maps_path))
-    images_html = eddyqc_images_html(image_items, extra_prefix_html=snr_html)
-    outlier_volumes_html = outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers)
-    ack_html = eddyqc_acknowledgment(qc.get("eddy_input"))
-
-    return f"""
-    <section id="eddyqc" class="qc-section">
-      <h2>Eddy Current &amp; Motion Correction (eddy_quad)</h2>
-      <p class="qc-desc">Summary statistics and motion/outlier diagnostics from FSL's
-      <code>eddy_quad</code>. The highlighted thresholds (abs &gt; {mot_abs_thresh} mm,
-      rel &gt; {mot_rel_thresh} mm, outliers &gt; {outlier_pct_thresh}%) are conventional
-      soft guidelines, not diagnostic standards &mdash; adjust to your own QC criteria.</p>
-
-      <div class="stat-grid">
-        {stat_cards}
-        {cnr_cards}
-      </div>
-
-      <div class="slice-block">
-        <h3>Volume-to-volume Motion (eddy_movement_rms)</h3>
-        <img src="data:image/png;base64,{motion_b64}" class="mosaic" alt="motion rms plot"/>
-      </div>
-
-      <div class="slice-block">
-        <h3>Outlier Slices (eddy_outlier_report)</h3>
-        <img src="data:image/png;base64,{outlier_b64}" class="mosaic" alt="outlier scatter plot"/>
-      </div>
-
-      {outlier_raw}
-
-      {outlier_volumes_html}
-
-      {images_html}
-
-      {ack_html}
-    </section>
-    """
-
-# --------------------------------------------------------------------------
-# Topup / susceptibility distortion correction QC
-# --------------------------------------------------------------------------
-
-def read_acqparams(path):
-    """Parse acqparams.tsv: one row per volume fed into topup, columns are
-    [PE_x, PE_y, PE_z, total_readout_time, ...]. Returns a list of
-    (pe_x, pe_y, pe_z) tuples, one per row/volume."""
-    rows = []
-    for line in Path(path).read_text().strip().splitlines():
-        parts = line.split()
-        if len(parts) >= 3:
-            rows.append(tuple(float(x) for x in parts[:3]))
-    return rows
-
-def pick_pe_volume_indices(acq_rows):
-    """First volume index for each distinct phase-encode direction, in the
-    order first encountered. Returns list of (pe_vector, index) tuples."""
-    seen = {}
-    for i, pe in enumerate(acq_rows):
-        if pe not in seen:
-            seen[pe] = i
-    return sorted(seen.items(), key=lambda kv: kv[1])
 
 def load_4d_volume(path):
     return nib.load(str(path)).get_fdata()
@@ -1246,8 +960,28 @@ def tractography_section(tck_path, t1_path, max_streamlines=6000, max_points_per
     """
 
 # --------------------------------------------------------------------------
-# Topup helpers continued
+# Topup / susceptibility distortion correction QC
 # --------------------------------------------------------------------------
+
+def read_acqparams(path):
+    """Parse acqparams.tsv: one row per volume fed into topup, columns are
+    [PE_x, PE_y, PE_z, total_readout_time, ...]. Returns a list of
+    (pe_x, pe_y, pe_z) tuples, one per row/volume."""
+    rows = []
+    for line in Path(path).read_text().strip().splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            rows.append(tuple(float(x) for x in parts[:3]))
+    return rows
+
+def pick_pe_volume_indices(acq_rows):
+    """First volume index for each distinct phase-encode direction, in the
+    order first encountered. Returns list of (pe_vector, index) tuples."""
+    seen = {}
+    for i, pe in enumerate(acq_rows):
+        if pe not in seen:
+            seen[pe] = i
+    return sorted(seen.items(), key=lambda kv: kv[1])
 
 def find_matching_pe_index(topup_pe_items, dwi_acqparams_path):
     """Match the DWI's own phase-encode direction (first row of its
@@ -1430,6 +1164,374 @@ def topup_section(before_path, after_path, topup_acqparams_path,
       {global_overlay_control}
       {block}
       {script}
+    </section>
+    """
+
+# --------------------------------------------------------------------------
+# SNR map helpers (eddy CNR-maps)
+# --------------------------------------------------------------------------
+
+def compute_snr_map(cnr_maps_path, median_filter_size=3):
+    """Volume 0 of eddy's CNR-maps output is the b0 SNR map (mean / std across
+    the b0 volumes, per eddy_quad's convention). A light median filter reduces
+    the influence of random noise and small misalignment, per Tahedl,
+    Tournier & Smith (2025)."""
+    data = nib.load(str(cnr_maps_path)).get_fdata()
+    snr_vol = data[..., 0] if data.ndim == 4 else data
+    if median_filter_size and median_filter_size > 1:
+        snr_vol = median_filter(snr_vol, size=median_filter_size)
+    return snr_vol
+
+def make_triplanar_colorbar_data_uri(vol3d, cmap="viridis", vmin=0, vmax=None,
+                                      cbar_label="", max_width=1000):
+    views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
+    # Extra figure width is reserved purely for the colorbar (via the smaller
+    # `right` value in subplots_adjust below), so the panels themselves keep
+    # their normal size and the colorbar no longer overlaps the sagittal view.
+    fig, axes = plt.subplots(1, 3, figsize=(3 * 4 + 1.4, 4.4), facecolor="black")
+    im = None
+    for ax_, (label, axis) in zip(axes, views):
+        sl = extract_slice(vol3d, axis)
+        im = ax_.imshow(sl, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax_.axis("off")
+        ax_.set_title(label, color=MUTED, fontsize=11)
+    cbar = fig.colorbar(im, ax=axes, fraction=0.035, pad=0.06)
+    cbar.set_label(cbar_label, color=MUTED)
+    cbar.ax.yaxis.set_tick_params(color=MUTED)
+    plt.setp(cbar.ax.get_yticklabels(), color=MUTED)
+    cbar.outline.set_edgecolor(GRID)
+    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.87, top=0.9, bottom=0.005)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+def snr_map_block(cnr_maps_path):
+    """Derives and renders the b0 SNR map (with colorbar) directly from eddy's
+    CNR-maps NIfTI, in place of eddy_quad's static, colorbar-less PNG."""
+    snr_vol = compute_snr_map(cnr_maps_path)
+    positive = snr_vol[snr_vol > 0]
+    vmax = float(np.percentile(positive, 99)) if positive.size else None
+
+    img_uri = make_triplanar_colorbar_data_uri(
+        snr_vol, cmap="viridis", vmin=0, vmax=vmax, cbar_label="SNR (mean / std)"
+    )
+
+    return f"""
+    <div class="slice-block">
+      <h3>SNR Map (b0)</h3>
+      <p class="qc-desc">Voxel-wise signal-to-noise ratio (the mean divided by the standard
+      deviation across the b0 volumes), taken from the first volume of eddy's CNR-maps
+      output and median-filtered to reduce the influence of random noise and small
+      misalignment. As a rule of thumb from Tahedl, Tournier &amp; Smith (2025,
+      <em>Nature Protocols</em> 20(9):2652&ndash;2684), it's worth checking the SNR in
+      regions that are typically low, such as the temporal lobes: if it's still
+      reasonably high there, it implies it's high enough everywhere else. In their
+      experience, an SNR of roughly 15 in such a region is acceptable for most
+      analyses.</p>
+      <img src="{img_uri}" class="mosaic" alt="SNR map, axial/coronal/sagittal, with colorbar"/>
+    </div>
+    """
+
+def eddyqc_section(json_path, rms_path, outlier_path=None, qc_dir=None,
+                    raw_dwi_path=None, preproc_dwi_path=None, cnr_maps_path=None,
+                    mot_abs_thresh=1.0, mot_rel_thresh=0.5, outlier_pct_thresh=5.0):
+    """Section for FSL eddy_quad outputs: qc.json + *.eddy_movement_rms +
+    *.eddy_outlier_report + the eddy_quad summary PNGs (avg_b0*.png,
+    avg_b<value>.png, cnr####.nii.gz.png), looked up in qc_dir
+    (defaults to the directory containing json_path). If raw_dwi_path and
+    preproc_dwi_path are given, also builds a raw-vs-processed comparison for
+    every volume flagged in the outlier report.
+    Thresholds are conventional soft guidelines, not diagnostic standards --
+    pass your own to override."""
+    qc = load_eddy_qc_json(json_path)
+    abs_rms, rel_rms = load_movement_rms(rms_path)
+    outliers = parse_outlier_report(outlier_path)
+    n_vols = len(abs_rms)
+    qc_dir = qc_dir or Path(json_path).parent
+
+    motion_b64 = fig_to_base64(plot_motion_rms(abs_rms, rel_rms))
+    outlier_b64 = fig_to_base64(plot_outlier_scatter(outliers, n_vols))
+
+    mot_abs = qc.get("qc_mot_abs")
+    mot_rel = qc.get("qc_mot_rel")
+    outlier_pct = qc.get("qc_outliers_tot", 0) * 100
+    bvals = qc.get("data_unique_bvals", [])
+    cnr_avg = qc.get("qc_cnr_avg", [])
+
+    def flag(value, threshold):
+        if value is None:
+            return ""
+        return "stat-bad" if value > threshold else "stat-ok"
+
+    stat_cards = f"""
+      <div class="stat-card {flag(mot_abs, mot_abs_thresh)}">
+        <div class="stat-label">Mean Abs. Motion</div>
+        <div class="stat-value">{mot_abs:.2f} mm</div>
+      </div>
+      <div class="stat-card {flag(mot_rel, mot_rel_thresh)}">
+        <div class="stat-label">Mean Rel. Motion</div>
+        <div class="stat-value">{mot_rel:.2f} mm</div>
+      </div>
+      <div class="stat-card {flag(outlier_pct, outlier_pct_thresh)}">
+        <div class="stat-label">Outlier Slices</div>
+        <div class="stat-value">{outlier_pct:.1f}%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Volumes (b0 / dwi)</div>
+        <div class="stat-value">{qc.get('data_no_b0_vols', '?')} / {qc.get('data_no_dw_vols', '?')}</div>
+      </div>
+    """
+
+    cnr_cards = ""
+    if cnr_avg:
+        labels = ["b0"] + [f"b={b:g}" for b in bvals]
+        cnr_cards = "".join(
+            f'<div class="stat-card"><div class="stat-label">{lbl} SNR/CNR</div>'
+            f'<div class="stat-value">{val:.2f}</div></div>'
+            for lbl, val in zip(labels, cnr_avg)
+        )
+
+    outlier_raw = ""
+    if outlier_path and Path(outlier_path).exists():
+        raw_text = Path(outlier_path).read_text().strip()
+        n_lines = len(raw_text.splitlines()) if raw_text else 0
+        outlier_raw = f"""
+        <details class="raw-details">
+          <summary>Raw eddy_outlier_report ({n_lines} entries)</summary>
+          <pre>{raw_text if raw_text else "No outliers reported."}</pre>
+        </details>
+        """
+
+    snr_html = snr_map_block(cnr_maps_path) if cnr_maps_path else ""
+    image_items = collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=bool(cnr_maps_path))
+    images_html = eddyqc_images_html(image_items, extra_prefix_html=snr_html)
+    outlier_volumes_html = outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers)
+    ack_html = eddyqc_acknowledgment(qc.get("eddy_input"))
+
+    return f"""
+    <section id="eddyqc" class="qc-section">
+      <h2>Eddy Current &amp; Motion Correction (eddy_quad)</h2>
+      <p class="qc-desc">Summary statistics and motion/outlier diagnostics from FSL's
+      <code>eddy_quad</code>. The highlighted thresholds (abs &gt; {mot_abs_thresh} mm,
+      rel &gt; {mot_rel_thresh} mm, outliers &gt; {outlier_pct_thresh}%) are conventional
+      soft guidelines, not diagnostic standards &mdash; adjust to your own QC criteria.</p>
+
+      <div class="stat-grid">
+        {stat_cards}
+        {cnr_cards}
+      </div>
+
+      <div class="slice-block">
+        <h3>Volume-to-volume Motion (eddy_movement_rms)</h3>
+        <img src="data:image/png;base64,{motion_b64}" class="mosaic" alt="motion rms plot"/>
+      </div>
+
+      <div class="slice-block">
+        <h3>Outlier Slices (eddy_outlier_report)</h3>
+        <img src="data:image/png;base64,{outlier_b64}" class="mosaic" alt="outlier scatter plot"/>
+      </div>
+
+      {outlier_raw}
+
+      {outlier_volumes_html}
+
+      {images_html}
+
+      {ack_html}
+    </section>
+    """
+
+def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
+    """For each volume flagged in the outlier report, build a raw (pre-eddy) vs
+    eddy-processed slider comparison. Uses the same triplanar (axial/coronal/
+    sagittal) layout as the topup section -- coronal/sagittal panels are where
+    slice-to-slice artifacts like 'Venetian blind' banding are most visible,
+    since those planes cut across the full stack of axial slices."""
+    if not outliers:
+        return ""
+
+    if not raw_dwi_path or not preproc_dwi_path:
+        return """
+        <div id="outliervol" class="subsection-anchor">
+        <h3 class="subsection-title">Outlier Volume Inspection</h3>
+        <p class="qc-desc">Outlier slices were reported, but the raw and eddy-processed
+        DWI volumes were not provided (<code>--eddy-raw-dwi</code> /
+        <code>--eddy-preproc-dwi</code>), so a visual before/after comparison could not
+        be generated.</p>
+        </div>
+        """
+
+    raw_data = load_4d_volume(raw_dwi_path)
+    proc_data = load_4d_volume(preproc_dwi_path)
+
+    by_scan = {}
+    for o in outliers:
+        by_scan.setdefault(o["scan"], []).append(o)
+
+    blocks = []
+    all_view_data = {}
+    for scan_idx, entries in sorted(by_scan.items()):
+        raw_vol = get_vol(raw_data, scan_idx)
+        proc_vol = get_vol(proc_data, scan_idx)
+
+        both_vals = np.concatenate([raw_vol.flatten(), proc_vol.flatten()])
+        positive = both_vals[both_vals > 0]
+        vmin, vmax = np.percentile(positive, [1, 99]) if positive.size else (None, None)
+
+        before_uri = make_triplanar_data_uri(raw_vol, vmin, vmax)
+        after_uri = make_triplanar_data_uri(proc_vol, vmin, vmax)
+
+        view_id = f"outliervol-{scan_idx}"
+        all_view_data[view_id] = {"before": before_uri, "after": after_uri}
+
+        slice_list = ", ".join(str(e["slice"]) for e in sorted(entries, key=lambda e: e["slice"]))
+        worst = max(abs(e["mean_sq_dev"]) for e in entries)
+
+        blocks.append(f"""
+        <div class="slice-block">
+          <h3>Volume {scan_idx}</h3>
+          <p class="qc-desc">Flagged slice(s): {slice_list} &middot; worst mean-sq.
+          deviation: {worst:.2f}</p>
+          <img id="{view_id}-img" class="mosaic slider-img" src="{before_uri}"
+               alt="volume {scan_idx} raw vs eddy-processed comparison"/>
+          <div class="vtoggle-row">
+            <span class="vtoggle-label-top">Raw</span>
+            <label class="vtoggle">
+              <input type="checkbox" id="{view_id}-range" onchange="updateOutlierVol('{view_id}')">
+              <span class="vtoggle-track"><span class="vtoggle-thumb"></span></span>
+            </label>
+            <span class="vtoggle-label-bottom">Eddy-processed</span>
+          </div>
+        </div>
+        """)
+
+    script = f"""
+    <script>
+      window.outlierVolData = Object.assign(window.outlierVolData || {{}}, {json.dumps(all_view_data)});
+      function updateOutlierVol(id) {{
+        var d = window.outlierVolData[id];
+        var mode = document.getElementById(id + '-range').checked ? 'after' : 'before';
+        document.getElementById(id + '-img').src = d[mode];
+      }}
+    </script>
+    """
+
+    return f"""
+    <div id="outliervol" class="subsection-anchor">
+    <h3 class="subsection-title">Outlier Volume Inspection</h3>
+    <p class="qc-desc">For each volume flagged in the outlier report, drag the slider
+    to compare the raw (pre-eddy) and eddy-processed image. Slice-to-volume or
+    interpolation artifacts &mdash; such as "Venetian blind" banding across slices
+    &mdash; are usually most visible in the coronal/sagittal panels, where alternating
+    bright/dark stripes indicate inconsistent per-slice correction that outlier
+    replacement may not have fully resolved.</p>
+    {"".join(blocks)}
+    {script}
+    </div>
+    """
+
+# --------------------------------------------------------------------------
+# NEW: Connectivity matrix (tck2connectome CSV) section
+# --------------------------------------------------------------------------
+
+def connectivity_matrix_section(csv_path, atlas_name=None):
+    """
+    Display a normalized connectivity matrix from a tck2connectome CSV.
+
+    Normalization: divide all entries by the maximum value so that the strongest
+    connection equals 1.0 in the visualization.
+    """
+    if not csv_path:
+        return ""
+
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        return f"""
+        <section id="connectivity" class="qc-section">
+          <h2>Connectivity Matrix</h2>
+          <p class="qc-desc">
+            Connectivity matrix file not found:
+            <code>{csv_path}</code>
+          </p>
+        </section>
+        """
+
+    # Load CSV and extract square matrix
+    try:
+        raw = np.loadtxt(csv_path, delimiter=",", skiprows=1)
+    except Exception:
+        raw = np.genfromtxt(csv_path, delimiter=",", skip_header=1, filling_values=0)
+
+    if raw.ndim != 2:
+        raw = np.atleast_2d(raw)
+
+    # If first column looks like an index column (N×(N+1)), drop it
+    if raw.shape[1] == raw.shape[0] + 1:
+        mat = raw[:, 1:]
+    else:
+        mat = raw
+
+    mat = mat.astype(float)
+    mat[mat < 0] = 0  # ensure non-negative
+
+    # Normalize by the global maximum
+    max_val = float(mat.max()) if mat.size else 0.0
+    if max_val > 0:
+        mat_norm = mat / max_val
+    else:
+        mat_norm = mat
+
+    # Create heatmap figure
+    fig, ax = plt.subplots(figsize=(5, 4))
+    im = ax.imshow(mat_norm, cmap="viridis", interpolation="nearest")
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Normalized streamline count (max = 1.0)", color=MUTED)
+    cbar.ax.yaxis.set_tick_params(color=MUTED)
+    plt.setp(cbar.ax.get_yticklabels(), color=MUTED)
+    cbar.outline.set_edgecolor(GRID)
+
+    ax.set_xlabel("Target node", color=MUTED)
+    ax.set_ylabel("Source node", color=MUTED)
+
+    title = f"Connectivity matrix ({atlas_name})" if atlas_name else "Connectivity matrix"
+    ax.set_title(title, color="white")
+
+    # Match dark theme
+    fig.patch.set_facecolor(DARK_BG)
+    ax.set_facecolor(DARK_BG)
+    for spine in ax.spines.values():
+        spine.set_color(GRID)
+    ax.tick_params(colors=MUTED, which="both")
+
+    fig.tight_layout()
+
+    # Convert figure to embedded PNG
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=900)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    uri = f"data:image/png;base64,{b64}"
+
+    atlas_html = f" for atlas <code>{atlas_name}</code>" if atlas_name else ""
+
+    return f"""
+    <section id="connectivity" class="qc-section">
+      <h2>Connectivity Matrix{atlas_html}</h2>
+      <p class="qc-desc">
+        Normalized connectivity matrix derived from <code>tck2connectome</code>.
+        Values are divided by the maximum entry so that the strongest connection
+        equals 1.0 before visualization.
+      </p>
+      <div class="slice-block">
+        <img src="{uri}" class="mosaic"
+             alt="Normalized connectivity matrix heatmap"/>
+      </div>
     </section>
     """
 
@@ -1639,10 +1741,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     color: var(--muted);
     white-space: nowrap;
   }}
-  /* Vertical toggle switch -- used wherever a control only has two states
-     (e.g. before/after) so the switch itself reads top-to-bottom instead of
-     left-to-right. The T1-DWI coregistration slider is a continuous
-     cross-fade and intentionally keeps the horizontal range slider above. */
+  /* Vertical toggle switch */
   .vtoggle-row {{
     display: flex;
     flex-direction: column;
@@ -1886,6 +1985,21 @@ def main():
         ),
     )
 
+    # New: connectivity matrix inputs (tck2connectome CSV)
+    p.add_argument(
+        "--connectivity-matrix",
+        default=None,
+        help=(
+            "Path to tck2connectome CSV connectivity matrix, e.g. "
+            "*_atlas-<atlas>_desc-streams_connmatrix.csv"
+        ),
+    )
+    p.add_argument(
+        "--connectivity-atlas-name",
+        default=None,
+        help="Optional atlas label to show in the connectivity section title.",
+    )
+
     p.add_argument("--output", default="qc_report.html", help="Output HTML path")
     p.add_argument("--subject", default=None, help="Subject label, e.g. sub-01")
     args = p.parse_args()
@@ -1921,7 +2035,7 @@ def main():
             ("brainmask", "Brain Mask", brainmask_section(args.brainmask_nodif, args.brainmask_mask))
         )
 
-    # New: dwi2response -voxels response-function voxel selection section
+    # dwi2response -voxels response-function voxel selection section
     if args.response_voxels:
         underlay_path = args.response_underlay
         underlay_label = "the response-underlay image"
@@ -1944,7 +2058,7 @@ def main():
             print("Skipping response-voxels section: no underlay image found "
                   "(pass --response-underlay, --reg-nodif, --brainmask-nodif, or --reg-t1w-dwi).")
 
-    # New: T1–DWI coregistration section
+    # T1–DWI coregistration section
     if args.reg_t1w_dwi and args.reg_nodif:
         sections.append(
             (
@@ -1954,7 +2068,7 @@ def main():
             )
         )
 
-    # New: tractogram section
+    # Tractogram section
     if args.tract_tck:
         tract_t1 = args.tract_t1 or args.reg_t1w_dwi
         if tract_t1:
@@ -1970,6 +2084,19 @@ def main():
         else:
             print("Skipping tractography section: no T1 image given "
                   "(pass --tract-t1 or --reg-t1w-dwi).")
+
+    # Connectivity matrix section
+    if args.connectivity_matrix:
+        sections.append(
+            (
+                "connectivity",
+                "Connectivity",
+                connectivity_matrix_section(
+                    args.connectivity_matrix,
+                    atlas_name=args.connectivity_atlas_name,
+                ),
+            )
+        )
 
     build_report(sections, args.output, subject=args.subject, extra_nav=extra_nav)
     print(f"Wrote {args.output}")

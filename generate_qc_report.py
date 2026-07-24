@@ -1478,10 +1478,13 @@ def connectivity_matrix_section(csv_path, atlas_name=None):
     mat = mat.astype(float)
     mat[mat < 0] = 0  # ensure non-negative
 
-    # Normalize by the global maximum
-    max_val = float(mat.max()) if mat.size else 0.0
-    if max_val > 0:
-        mat_norm = mat / max_val
+    # ---- Robust normalization by 95th percentile, with clipping ----
+    vals = mat[mat > 0]
+    if vals.size:
+        p95 = float(np.percentile(vals, 95))
+        scale = p95 if p95 > 0 else float(vals.max())
+        mat_norm = mat / scale
+        mat_norm[mat_norm > 1] = 1.0
     else:
         mat_norm = mat
 
@@ -1489,7 +1492,7 @@ def connectivity_matrix_section(csv_path, atlas_name=None):
     fig, ax = plt.subplots(figsize=(5, 4))
     im = ax.imshow(mat_norm, cmap="viridis", interpolation="nearest")
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label("Normalized streamline count (max = 1.0)", color=MUTED)
+    cbar.set_label("Normalized streamline count (≈95th percentile = 1.0)", color=MUTED)
     cbar.ax.yaxis.set_tick_params(color=MUTED)
     plt.setp(cbar.ax.get_yticklabels(), color=MUTED)
     cbar.outline.set_edgecolor(GRID)

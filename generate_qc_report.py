@@ -7,7 +7,9 @@ Currently implements:
   - Eddy QC section (eddy_quad)
   - Topup / susceptibility distortion correction QC
   - Brainmask QC
+  - Response function voxel selection QC (dwi2response -voxels)
   - T1–DWI coregistration QC with optional 5tt2vis overlay
+  - Tractogram QC (whole-brain .tck overlaid on T1, colored by fibre orientation)
 
 Designed to be extended: add a new `..._section(path)` function that
 returns an HTML string, and append it to the `sections` list in main().
@@ -30,6 +32,8 @@ import nibabel as nib
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from matplotlib.collections import LineCollection
 from PIL import Image
 from scipy.ndimage import median_filter
 
@@ -366,11 +370,13 @@ def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
           deviation: {worst:.2f}</p>
           <img id="{view_id}-img" class="mosaic slider-img" src="{before_uri}"
                alt="volume {scan_idx} raw vs eddy-processed comparison"/>
-          <div class="topup-slider-row">
-            <span class="topup-slider-endlabel">Raw</span>
-            <input type="range" min="0" max="1" step="1" value="0" class="topup-range"
-                   id="{view_id}-range" oninput="updateOutlierVol('{view_id}')">
-            <span class="topup-slider-endlabel">Eddy-processed</span>
+          <div class="vtoggle-row">
+            <span class="vtoggle-label-top">Raw</span>
+            <label class="vtoggle">
+              <input type="checkbox" id="{view_id}-range" onchange="updateOutlierVol('{view_id}')">
+              <span class="vtoggle-track"><span class="vtoggle-thumb"></span></span>
+            </label>
+            <span class="vtoggle-label-bottom">Eddy-processed</span>
           </div>
         </div>
         """)
@@ -380,7 +386,7 @@ def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
       window.outlierVolData = Object.assign(window.outlierVolData || {{}}, {json.dumps(all_view_data)});
       function updateOutlierVol(id) {{
         var d = window.outlierVolData[id];
-        var mode = document.getElementById(id + '-range').value === '1' ? 'after' : 'before';
+        var mode = document.getElementById(id + '-range').checked ? 'after' : 'before';
         document.getElementById(id + '-img').src = d[mode];
       }}
     </script>
@@ -414,19 +420,22 @@ def compute_snr_map(cnr_maps_path, median_filter_size=3):
 def make_triplanar_colorbar_data_uri(vol3d, cmap="viridis", vmin=0, vmax=None,
                                       cbar_label="", max_width=1000):
     views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
-    fig, axes = plt.subplots(1, 3, figsize=(3 * 4, 4.4), facecolor="black")
+    # Extra figure width is reserved purely for the colorbar (via the smaller
+    # `right` value in subplots_adjust below), so the panels themselves keep
+    # their normal size and the colorbar no longer overlaps the sagittal view.
+    fig, axes = plt.subplots(1, 3, figsize=(3 * 4 + 1.4, 4.4), facecolor="black")
     im = None
     for ax_, (label, axis) in zip(axes, views):
         sl = extract_slice(vol3d, axis)
         im = ax_.imshow(sl, cmap=cmap, vmin=vmin, vmax=vmax)
         ax_.axis("off")
         ax_.set_title(label, color=MUTED, fontsize=11)
-    cbar = fig.colorbar(im, ax=axes, fraction=0.025, pad=0.02)
+    cbar = fig.colorbar(im, ax=axes, fraction=0.035, pad=0.06)
     cbar.set_label(cbar_label, color=MUTED)
     cbar.ax.yaxis.set_tick_params(color=MUTED)
     plt.setp(cbar.ax.get_yticklabels(), color=MUTED)
     cbar.outline.set_edgecolor(GRID)
-    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.92, top=0.9, bottom=0.005)
+    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.87, top=0.9, bottom=0.005)
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -613,6 +622,45 @@ def extract_slice(vol3d, axis, frac=0.5):
         sl = vol3d[:, :, idx]
     return np.rot90(sl)
 
+def mip_slice(vol3d, axis):
+    """Maximum-intensity projection collapsed along `axis`, using the same
+    row/col convention (and rot90) as extract_slice, so MIP images and
+    single-slice images from the same volume/axis line up identically.
+    Used where the content of interest (sparse voxels, whole-brain
+    streamlines) isn't reliably visible on any single mid-slice."""
+    sl = vol3d.max(axis=axis)
+    return np.rot90(sl)
+
+def make_triplanar_mip_multimask_data_uri(underlay_vol, masks, colors, vmin, vmax,
+                                           alpha=0.6, max_width=1000):
+    """Grayscale MIP of `underlay_vol` with one or more binary mask volumes
+    overlaid as flat colors (also MIP'd, so a sampled voxel is visible
+    regardless of its depth along the projection axis). Zero/background is
+    left fully transparent so it doesn't tint the image. Alpha is kept
+    moderate (rather than near-opaque) because MIP projection can make
+    spatially separate masks appear to overlap in 2D -- with a lower alpha,
+    an earlier mask still shows through instead of being fully hidden by a
+    later one drawn on top of it at the same projected pixel."""
+    views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
+    fig, axes = plt.subplots(1, 3, figsize=(3 * 4, 4.4), facecolor="black")
+    for ax_, (label, axis) in zip(axes, views):
+        base_sl = mip_slice(underlay_vol, axis)
+        ax_.imshow(base_sl, cmap="gray", vmin=vmin, vmax=vmax)
+        for mask_vol, color in zip(masks, colors):
+            msl = mip_slice(mask_vol, axis)
+            msl = np.ma.masked_less_equal(msl, 0.5)
+            ax_.imshow(msl, cmap=ListedColormap([color]), vmin=0, vmax=1, alpha=alpha)
+        ax_.axis("off")
+        ax_.set_title(label, color=MUTED, fontsize=11)
+    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.995, top=0.9, bottom=0.005)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
 def slice_to_data_uri(slice2d, vmin=None, vmax=None, cmap="gray", max_width=500):
     fig, ax = plt.subplots(figsize=(4, 4), facecolor="black")
     ax.imshow(slice2d, cmap=cmap, vmin=vmin, vmax=vmax)
@@ -645,10 +693,22 @@ def slice_overlay_to_data_uri(base_slice, overlay_slice, vmin, vmax, overlay_abs
     return f"data:image/png;base64,{b64}"
 
 def make_triplanar_data_uri(vol3d, vmin, vmax, overlay_vol=None, overlay_absmax=None,
-                             cmap="gray", overlay_cmap="bwr", alpha=0.55, max_width=1000):
+                             cmap="gray", overlay_cmap="bwr", alpha=0.55, max_width=1000,
+                             overlay_vmin=None, overlay_mask_zero=False):
     """Axial, coronal, and sagittal mid-slices side by side in one figure --
     same sizing convention (max_width) as the noise-map mosaics elsewhere in
-    the report, so panels read consistently across sections."""
+    the report, so panels read consistently across sections.
+
+    overlay_vmin: lower bound for the overlay colormap. Defaults to
+        -overlay_absmax (diverging, e.g. topup's field map). Pass 0 for
+        overlays whose values are non-negative (e.g. 5tt2vis tissue codes)
+        so the full colormap range is actually used instead of being
+        collapsed into one half of it.
+    overlay_mask_zero: if True, background/zero-valued overlay voxels are
+        masked out (fully transparent) instead of being drawn in the
+        colormap's zero-color, which otherwise tints the entire background
+        outside the brain instead of leaving it black.
+    """
     views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
     fig, axes = plt.subplots(1, 3, figsize=(3 * 4, 4.4), facecolor="black")
     for ax_, (label, axis) in zip(axes, views):
@@ -656,7 +716,10 @@ def make_triplanar_data_uri(vol3d, vmin, vmax, overlay_vol=None, overlay_absmax=
         ax_.imshow(sl, cmap=cmap, vmin=vmin, vmax=vmax)
         if overlay_vol is not None:
             osl = extract_slice(overlay_vol, axis)
-            ax_.imshow(osl, cmap=overlay_cmap, vmin=-overlay_absmax, vmax=overlay_absmax, alpha=alpha)
+            if overlay_mask_zero:
+                osl = np.ma.masked_less_equal(osl, 0)
+            ov_vmin = -overlay_absmax if overlay_vmin is None else overlay_vmin
+            ax_.imshow(osl, cmap=overlay_cmap, vmin=ov_vmin, vmax=overlay_absmax, alpha=alpha)
         ax_.axis("off")
         ax_.set_title(label, color=MUTED, fontsize=11)
     fig.subplots_adjust(wspace=0.02, left=0.005, right=0.995, top=0.9, bottom=0.005)
@@ -728,6 +791,97 @@ def brainmask_section(nodif_path, mask_path):
       </div>
       <div class="slice-block">
         <img src="{img_uri}" class="mosaic" alt="brain mask overlay on nodif, axial/coronal/sagittal"/>
+      </div>
+    </section>
+    """
+
+# --------------------------------------------------------------------------
+# New: dwi2response --voxels response-function voxel selection QC
+# --------------------------------------------------------------------------
+
+# Order follows dwi2response's convention for multi-tissue algorithms
+# (e.g. dhollander, msmt_csd): volume 0 = single-fibre WM, 1 = GM, 2 = CSF.
+RESPONSE_TISSUE_LABELS = ["WM", "GM", "CSF"]
+RESPONSE_TISSUE_COLORS = ["#4fa3ff", "#ff9f4f", "#e14fff"]
+
+def response_voxels_section(voxels_path, underlay_path, underlay_label="nodif (b0)"):
+    """QC for the voxel selection mask produced by `dwi2response ... -voxels
+    voxels.mif`: a 4D image with one binary volume per tissue compartment
+    (WM/GM/CSF, in dwi2response's own ordering), showing which voxels were
+    used to estimate each tissue's response function.
+
+    Rendered as a maximum-intensity projection rather than a single
+    mid-slice, since the selected voxels are typically sparse and could
+    otherwise fall outside whichever slice happens to be shown."""
+    voxels_data = nib.load(str(voxels_path)).get_fdata()
+
+    if voxels_data.ndim != 4 or voxels_data.shape[-1] != 3:
+        return f"""
+        <section id="responsevoxels" class="qc-section">
+          <h2>Response Function Voxel Selection (dwi2response)</h2>
+          <p class="qc-desc">Could not render: expected a 4D image with 3 volumes
+          (one per tissue compartment, from <code>dwi2response ... -voxels</code>),
+          but got shape {voxels_data.shape}.</p>
+        </section>
+        """
+
+    underlay = nib.load(str(underlay_path)).get_fdata()
+    if underlay.ndim == 4:
+        underlay = underlay.mean(axis=-1)
+
+    if underlay.shape != voxels_data.shape[:3]:
+        return f"""
+        <section id="responsevoxels" class="qc-section">
+          <h2>Response Function Voxel Selection (dwi2response)</h2>
+          <p class="qc-desc">Could not render: the voxel selection mask
+          (shape {voxels_data.shape[:3]}) and the underlay image
+          (shape {underlay.shape}) have different dimensions.</p>
+        </section>
+        """
+
+    positive = underlay[underlay > 0]
+    vmin, vmax = np.percentile(positive, [1, 99]) if positive.size else (None, None)
+
+    masks = [voxels_data[..., i] for i in range(3)]
+    counts = [int(np.sum(m > 0.5)) for m in masks]
+
+    # Draw CSF and GM first, WM last (on top): in a MIP, an outer/larger mask
+    # (e.g. a cortical GM shell) can project across nearly the whole
+    # silhouette and, drawn later, would otherwise sit on top of and
+    # obscure a smaller, deeper mask (WM) at the same projected pixel.
+    draw_order = [2, 1, 0]
+    img_uri = make_triplanar_mip_multimask_data_uri(
+        underlay,
+        [masks[i] for i in draw_order],
+        [RESPONSE_TISSUE_COLORS[i] for i in draw_order],
+        vmin, vmax,
+    )
+
+    legend_items = "".join(
+        f'<div class="legend-item"><span class="legend-swatch" '
+        f'style="background:{color};"></span>{label} response voxels '
+        f'&mdash; {count:,} vox</div>'
+        for label, color, count in zip(RESPONSE_TISSUE_LABELS, RESPONSE_TISSUE_COLORS, counts)
+    )
+
+    return f"""
+    <section id="responsevoxels" class="qc-section">
+      <h2>Response Function Voxel Selection (dwi2response)</h2>
+      <p class="qc-desc">Voxels selected by <code>dwi2response ... -voxels</code> for
+      estimating each tissue's response function, overlaid on {underlay_label} as a
+      maximum-intensity projection so voxels are visible regardless of their depth
+      along each view. Sampled voxels should fall almost entirely within the
+      expected compartment: WM voxels in deep, single-fibre white matter (e.g.
+      centrum semiovale, corpus callosum, internal capsule), GM voxels along the
+      cortical ribbon, and CSF voxels in the ventricles. Voxels bleeding across
+      compartments &mdash; e.g. WM-labelled voxels sitting in CSF or right at the
+      skull &mdash; usually point to a brain mask or partial-volume problem
+      upstream, and the corresponding response function should be treated with
+      caution.</p>
+      <div class="legend-row">{legend_items}</div>
+      <div class="slice-block">
+        <img src="{img_uri}" class="mosaic"
+             alt="response function voxel selection overlaid on {underlay_label}, axial/coronal/sagittal MIP"/>
       </div>
     </section>
     """
@@ -812,6 +966,8 @@ def coreg_section(t1w_dwi_path, nodif_path, five_tt_vis_path=None):
                 t1_vmax,
                 overlay_vol=five_tt,
                 overlay_absmax=ov_absmax,
+                overlay_vmin=0,
+                overlay_mask_zero=True,
                 cmap="gray",
                 overlay_cmap="tab10",
                 alpha=0.6,
@@ -822,6 +978,8 @@ def coreg_section(t1w_dwi_path, nodif_path, five_tt_vis_path=None):
                 nodif_vmax,
                 overlay_vol=five_tt,
                 overlay_absmax=ov_absmax,
+                overlay_vmin=0,
+                overlay_mask_zero=True,
                 cmap="magma",
                 overlay_cmap="tab10",
                 alpha=0.6,
@@ -869,7 +1027,7 @@ def coreg_section(t1w_dwi_path, nodif_path, five_tt_vis_path=None):
       </div>
       <div class="topup-slider-row">
         <span class="topup-slider-endlabel">T1w</span>
-        <input type="range" min="0" max="1" step="0.02" value="0" class="topup-range"
+        <input type="range" min="0" max="1" step="0.1" value="0" class="topup-range"
                id="coreg-range" oninput="updateCoregView()">
         <span class="topup-slider-endlabel">Nodif</span>
       </div>
@@ -928,6 +1086,162 @@ def coreg_section(t1w_dwi_path, nodif_path, five_tt_vis_path=None):
       {overlay_control}
       {block}
       {script}
+    </section>
+    """
+
+# --------------------------------------------------------------------------
+# New: Tractogram QC (overlaid on T1-in-DWI-space, colored by orientation)
+# --------------------------------------------------------------------------
+
+def voxel_to_plot_xy(vox_pts, axis, shape):
+    """Map continuous (i, j, k) voxel coordinates to the 2D (x, y) plot
+    coordinates used by mip_slice/extract_slice's rot90'd images, for a
+    given projection axis (0=sagittal, 1=coronal, 2=axial). Derived from
+    np.rot90's coordinate mapping: for an (R, C) array, entry (r, c) moves
+    to (C-1-c, r) -- i.e. plot_x = r, plot_y = C-1-c -- so streamlines line
+    up with the anatomy exactly as displayed."""
+    if axis == 0:      # sagittal: row=j, col=k
+        r, c, C = vox_pts[:, 1], vox_pts[:, 2], shape[2]
+    elif axis == 1:     # coronal: row=i, col=k
+        r, c, C = vox_pts[:, 0], vox_pts[:, 2], shape[2]
+    else:                # axial: row=i, col=j
+        r, c, C = vox_pts[:, 0], vox_pts[:, 1], shape[1]
+    return r, (C - 1) - c
+
+def build_tract_view_segments(streamlines, inv_affine, axis, shape, max_points_per_line=40):
+    """Builds line segments (and per-segment DEC colors) for one projection
+    axis, from a list of streamlines given as Nx3 arrays in the same world
+    (scanner/RASMM) space as the affine used to compute inv_affine."""
+    seg_list, color_list = [], []
+    for sl in streamlines:
+        pts = np.asarray(sl)
+        if len(pts) < 2:
+            continue
+        if max_points_per_line and len(pts) > max_points_per_line:
+            keep = np.linspace(0, len(pts) - 1, max_points_per_line).astype(int)
+            pts = pts[keep]
+
+        # Standard directionally-encoded-color (DEC) convention: color is the
+        # absolute, normalized local tangent in world/scanner space --
+        # red=left-right, green=anterior-posterior, blue=inferior-superior.
+        diffs = np.diff(pts, axis=0)
+        norms = np.linalg.norm(diffs, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        dirs = np.abs(diffs / norms)
+
+        vox = nib.affines.apply_affine(inv_affine, pts)
+        x, y = voxel_to_plot_xy(vox, axis, shape)
+        segs = np.stack(
+            [np.column_stack([x[:-1], y[:-1]]), np.column_stack([x[1:], y[1:]])], axis=1
+        )
+        seg_list.append(segs)
+        color_list.append(dirs)
+
+    if not seg_list:
+        return np.zeros((0, 2, 2)), np.zeros((0, 3))
+    return np.concatenate(seg_list, axis=0), np.concatenate(color_list, axis=0)
+
+def make_tractography_triplanar_data_uri(t1_data, streamlines, inv_affine,
+                                          max_points_per_line=40, linewidth=0.35,
+                                          alpha=0.75, max_width=1000):
+    """T1 shown as a grayscale MIP (so the whole brain silhouette is visible
+    at once, matching the full-brain extent of the tractogram) with the
+    tractogram's streamlines drawn on top, colored by local fibre
+    orientation (DEC convention)."""
+    views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
+    positive = t1_data[t1_data > 0]
+    vmin, vmax = np.percentile(positive, [2, 98]) if positive.size else (None, None)
+    shape = t1_data.shape
+
+    fig, axes = plt.subplots(1, 3, figsize=(3 * 4, 4.4), facecolor="black")
+    for ax_, (label, axis) in zip(axes, views):
+        base_sl = mip_slice(t1_data, axis)
+        ax_.imshow(base_sl, cmap="gray", vmin=vmin, vmax=vmax)
+        xlim, ylim = ax_.get_xlim(), ax_.get_ylim()
+
+        segs, colors = build_tract_view_segments(
+            streamlines, inv_affine, axis, shape, max_points_per_line=max_points_per_line
+        )
+        if len(segs):
+            ax_.add_collection(LineCollection(segs, colors=colors, linewidths=linewidth, alpha=alpha))
+
+        ax_.set_xlim(xlim)
+        ax_.set_ylim(ylim)
+        ax_.axis("off")
+        ax_.set_title(label, color=MUTED, fontsize=11)
+
+    fig.subplots_adjust(wspace=0.02, left=0.005, right=0.995, top=0.9, bottom=0.005)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    optimized = optimize_png_bytes(buf.read(), max_width=max_width)
+    b64 = base64.b64encode(optimized).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+def tractography_section(tck_path, t1_path, max_streamlines=6000, max_points_per_line=40, seed=0):
+    """QC for a whole-brain tractogram (.tck), overlaid on the T1w image in
+    DWI space and colored by local fibre orientation. Assumes the .tck's
+    streamline coordinates share the same world/scanner space as the T1
+    image's affine (true whenever tractography was run on data in, or
+    resampled to, the same space as --tract-t1 / --reg-t1w-dwi)."""
+    t1_img = nib.load(str(t1_path))
+    t1_data = t1_img.get_fdata()
+    if t1_data.ndim == 4:
+        t1_data = t1_data.mean(axis=-1)
+
+    try:
+        tfile = nib.streamlines.load(str(tck_path))
+    except Exception as exc:
+        return f"""
+        <section id="tractography" class="qc-section">
+          <h2>Tractogram</h2>
+          <p class="qc-desc">Could not read tractogram
+          <code>{Path(tck_path).name}</code>: {exc}</p>
+        </section>
+        """
+
+    streamlines_full = tfile.streamlines
+    n_total = len(streamlines_full)
+
+    rng = np.random.default_rng(seed)
+    if n_total > max_streamlines:
+        keep_idx = rng.choice(n_total, size=max_streamlines, replace=False)
+        streamlines = [streamlines_full[i] for i in keep_idx]
+    else:
+        streamlines = list(streamlines_full)
+
+    img_uri = make_tractography_triplanar_data_uri(
+        t1_data, streamlines, np.linalg.inv(t1_img.affine),
+        max_points_per_line=max_points_per_line,
+    )
+
+    subsample_note = ""
+    if n_total > max_streamlines:
+        subsample_note = f"""
+        <p class="qc-desc">Showing a random subsample of {max_streamlines:,} of
+        {n_total:,} total streamlines for rendering performance; the full
+        tractogram itself is unaffected.</p>
+        """
+
+    return f"""
+    <section id="tractography" class="qc-section">
+      <h2>Tractogram</h2>
+      <p class="qc-desc">Whole-brain tractogram overlaid on the T1w image in DWI
+      space, shown as a maximum-intensity projection so streamlines are visible
+      regardless of depth. Streamlines are colored by local fibre orientation
+      using the standard directionally-encoded-colour (DEC) convention: red =
+      left&ndash;right, green = anterior&ndash;posterior, blue =
+      inferior&ndash;superior (mixed hues indicate oblique orientations). Check
+      that major pathways look anatomically plausible (e.g. a red corpus
+      callosum, green cingulum/fornix, blue corticospinal tract) and that
+      streamlines follow the T1 anatomy rather than drifting outside the brain
+      or piling up at a single seed location.</p>
+      {subsample_note}
+      <div class="slice-block">
+        <img src="{img_uri}" class="mosaic"
+             alt="tractogram overlaid on T1, axial/coronal/sagittal MIP, colored by fiber orientation"/>
+      </div>
     </section>
     """
 
@@ -1055,11 +1369,13 @@ def topup_section(before_path, after_path, topup_acqparams_path,
     <div class="slice-block">
       <img id="topup-img" class="mosaic slider-img" src="{before_uri}"
            alt="axial, coronal, sagittal topup before/after comparison"/>
-      <div class="topup-slider-row">
-        <span class="topup-slider-endlabel">Before</span>
-        <input type="range" min="0" max="1" step="1" value="0" class="topup-range"
-               id="topup-range" oninput="updateTopupView()">
-        <span class="topup-slider-endlabel">After</span>
+      <div class="vtoggle-row">
+        <span class="vtoggle-label-top">Before</span>
+        <label class="vtoggle">
+          <input type="checkbox" id="topup-range" onchange="updateTopupView()">
+          <span class="vtoggle-track"><span class="vtoggle-thumb"></span></span>
+        </label>
+        <span class="vtoggle-label-bottom">After</span>
       </div>
       <div class="slider-label" id="topup-label">{before_label}</div>
     </div>
@@ -1070,7 +1386,7 @@ def topup_section(before_path, after_path, topup_acqparams_path,
       window.topupData = {json.dumps(view_data)};
       function updateTopupView() {{
         var d = window.topupData;
-        var mode = document.getElementById('topup-range').value === '1' ? 'after' : 'before';
+        var mode = document.getElementById('topup-range').checked ? 'after' : 'before';
         var overlayCb = document.getElementById('topup-overlay');
         var img = document.getElementById('topup-img');
         var label = document.getElementById('topup-label');
@@ -1323,6 +1639,85 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     color: var(--muted);
     white-space: nowrap;
   }}
+  /* Vertical toggle switch -- used wherever a control only has two states
+     (e.g. before/after) so the switch itself reads top-to-bottom instead of
+     left-to-right. The T1-DWI coregistration slider is a continuous
+     cross-fade and intentionally keeps the horizontal range slider above. */
+  .vtoggle-row {{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+  }}
+  .vtoggle {{
+    position: relative;
+    display: inline-block;
+    width: 28px;
+    height: 52px;
+    cursor: pointer;
+  }}
+  .vtoggle input {{
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }}
+  .vtoggle-track {{
+    position: absolute;
+    inset: 0;
+    background: #20242b;
+    border: 1px solid #2a2f36;
+    border-radius: 14px;
+    transition: background 0.2s ease;
+  }}
+  .vtoggle-thumb {{
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: transform 0.2s ease, background 0.2s ease;
+  }}
+  .vtoggle input:checked + .vtoggle-track {{
+    background: #28405c;
+  }}
+  .vtoggle input:checked + .vtoggle-track .vtoggle-thumb {{
+    transform: translateY(24px);
+    background: var(--accent);
+  }}
+  .vtoggle input:focus-visible + .vtoggle-track {{
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }}
+  .vtoggle-label-top,
+  .vtoggle-label-bottom {{
+    font-size: 0.75rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }}
+  .legend-row {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 0.75rem 0 1.25rem;
+  }}
+  .legend-item {{
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--text);
+  }}
+  .legend-swatch {{
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    display: inline-block;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+  }}
   .overlay-toggle {{
     display: flex;
     align-items: center;
@@ -1444,6 +1839,53 @@ def main():
         ),
     )
 
+    # New: dwi2response -voxels QC inputs
+    p.add_argument(
+        "--response-voxels",
+        default=None,
+        help=(
+            "4D voxel-selection image from `dwi2response ... -voxels voxels.mif` "
+            "(3 volumes: WM/GM/CSF response-function voxels, dwi2response's own "
+            "tissue ordering)."
+        ),
+    )
+    p.add_argument(
+        "--response-underlay",
+        default=None,
+        help=(
+            "Anatomical image to show the response-function voxel selection on top "
+            "of, in the same grid as --response-voxels. Defaults to whichever of "
+            "--reg-nodif, --brainmask-nodif, or --reg-t1w-dwi is available, in that "
+            "order, if not given explicitly."
+        ),
+    )
+
+    # New: tractogram QC inputs
+    p.add_argument(
+        "--tract-tck",
+        default=None,
+        help="Tractogram (.tck) to visualize, colored by local fibre orientation.",
+    )
+    p.add_argument(
+        "--tract-t1",
+        default=None,
+        help=(
+            "T1w image to overlay the tractogram on top of. Must share the same "
+            "world/scanner space as the .tck's streamline coordinates (e.g. the "
+            "DWI-space T1). Defaults to --reg-t1w-dwi if not given."
+        ),
+    )
+    p.add_argument(
+        "--tract-max-streamlines",
+        type=int,
+        default=6000,
+        help=(
+            "Randomly subsample the tractogram to at most this many streamlines "
+            "before rendering, for performance (default: 6000). Does not affect "
+            "the underlying tractogram file."
+        ),
+    )
+
     p.add_argument("--output", default="qc_report.html", help="Output HTML path")
     p.add_argument("--subject", default=None, help="Subject label, e.g. sub-01")
     args = p.parse_args()
@@ -1479,6 +1921,29 @@ def main():
             ("brainmask", "Brain Mask", brainmask_section(args.brainmask_nodif, args.brainmask_mask))
         )
 
+    # New: dwi2response -voxels response-function voxel selection section
+    if args.response_voxels:
+        underlay_path = args.response_underlay
+        underlay_label = "the response-underlay image"
+        if not underlay_path:
+            if args.reg_nodif:
+                underlay_path, underlay_label = args.reg_nodif, "nodif (b0)"
+            elif args.brainmask_nodif:
+                underlay_path, underlay_label = args.brainmask_nodif, "nodif (b0)"
+            elif args.reg_t1w_dwi:
+                underlay_path, underlay_label = args.reg_t1w_dwi, "the T1w image in DWI space"
+        if underlay_path:
+            sections.append(
+                (
+                    "responsevoxels",
+                    "Response Voxels",
+                    response_voxels_section(args.response_voxels, underlay_path, underlay_label=underlay_label),
+                )
+            )
+        else:
+            print("Skipping response-voxels section: no underlay image found "
+                  "(pass --response-underlay, --reg-nodif, --brainmask-nodif, or --reg-t1w-dwi).")
+
     # New: T1–DWI coregistration section
     if args.reg_t1w_dwi and args.reg_nodif:
         sections.append(
@@ -1488,6 +1953,23 @@ def main():
                 coreg_section(args.reg_t1w_dwi, args.reg_nodif, five_tt_vis_path=args.reg_5ttvis),
             )
         )
+
+    # New: tractogram section
+    if args.tract_tck:
+        tract_t1 = args.tract_t1 or args.reg_t1w_dwi
+        if tract_t1:
+            sections.append(
+                (
+                    "tractography",
+                    "Tractogram",
+                    tractography_section(
+                        args.tract_tck, tract_t1, max_streamlines=args.tract_max_streamlines
+                    ),
+                )
+            )
+        else:
+            print("Skipping tractography section: no T1 image given "
+                  "(pass --tract-t1 or --reg-t1w-dwi).")
 
     build_report(sections, args.output, subject=args.subject, extra_nav=extra_nav)
     print(f"Wrote {args.output}")

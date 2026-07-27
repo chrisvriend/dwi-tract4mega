@@ -689,7 +689,7 @@ fi
             --out=${subj}${sessionfile}space-dwi_desc-topup \
             --iout=${subj}${sessionfile}space-dwi_desc-unwarped_epi \
             --fout=${subj}${sessionfile}space-dwi_desc-topup_fieldmap --verbose >${subj}${sessionfile}topup_$(date +"%Y-%m-%d_%H-%M").log
-            cp ${subj}${sessionfile}topup_$(date +"%Y-%m-%d_%H-%M").log ${outputdir}/dwi-preproc/${subj}/log
+            cp ${subj}${sessionfile}topup_*.log ${outputdir}/dwi-preproc/${subj}/log
             
         fi
         

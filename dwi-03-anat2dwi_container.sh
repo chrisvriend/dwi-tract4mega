@@ -304,7 +304,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
         export FS_V8_XOPTS=0 && recon-all -sd ${workdir}/${subj}/freesurfer  \
             -subjid ${subj} -i ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz \
-            -all --threads ${nthreads} 
+            -all -parallel --threads ${nthreads} 
     else 
         recon-all -sd ${workdir}/${subj}/freesurfer  \
         -subjid ${subj} -i ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.nii.gz \
@@ -318,15 +318,20 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
     # --- subfield segmentation ---
 
-     if [[ "${subfields}" -eq 1 ]]; then 
+    if [[ "${subfields}" -eq 1 ]]; then 
+
+            mkdir -p ${workdir}/${subj}/freesurfer/tmp
 
             for structure in thalamus hippo-amygdala brainstem; do 
 
                 segment_subregions ${structure} \
-                -sd ${workdir}/${subj}/freesurfer \
-                --cross ${subj} -nthreads ${nthreads}
+                --sd ${workdir}/${subj}/freesurfer \
+                --cross ${subj} --threads ${nthreads} \
+                --temp-dir ${workdir}/${subj}/freesurfer/tmp
 
             done
+
+            rm -rf ${workdir}/${subj}/freesurfer/tmp
 
     fi
 

@@ -785,7 +785,7 @@ rsync -av --ignore-existing "${SUBJECTS_DIR}/${subj}" "${freesurferdir}"
 
 # Clean up
 if [[ -d "${workdir}/${subj}/freesurfer/fsaverage" ]]; then
-    chmod -R u+w "${workdir}/${subj}/freesurfer/fsaverage"
+    chmod -R u+w "${workdir}/${subj}/freesurfer/fsaverage" || echo "Warning: Could not change permissions for ${workdir}/${subj}/freesurfer/fsaverage" >&2
     rm -rf "${workdir}/${subj}/freesurfer/fsaverage"
 fi
 

@@ -320,7 +320,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
     if [[ "${subfields}" -eq 1 ]]; then 
 
-            mkdir -p ${workdir}/${subj}/freesurfer/tmp
+            mkdir -p ${workdir}/${subj}/freesurfer/tmpd
 
             for structure in thalamus hippo-amygdala brainstem; do 
 
@@ -583,11 +583,6 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     fi
 
 
-    # 5TT2VIS
-   5tt2vis "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
-        "${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_vis.nii.gz" -force
-
-
     # Transfer to output directory
     mkdir -p "${outputdir}/dwi-preproc/${subj}/anat"
     mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
@@ -615,6 +610,11 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     #         --init-best --reg "${SUBJECTS_DIR}/${subj}/dwi/${subj}${sessionfile}register.dat" --dti
     # fi
 fi
+
+# 5TT2VIS
+5tt2vis "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz" \
+    "${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_vis.nii.gz" -force
+
 
 # --- Atlas warping and registration to FreeSurfer space---
 if [[ ! -d "${freesurferdir}/${subj}/mri" ]]; then

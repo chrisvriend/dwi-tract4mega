@@ -280,8 +280,21 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz" -force
           
         rsync -av "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz" \
-            "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
-            
+         "${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz" \
+         "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/"
+
+
+        echo "{
+        \"Resolution\": \"T1w (brain extracted) registered to dwi space in original resolution \",
+        \"Orientation\": \"RAS\",
+        \"Space\":\"dwi\"
+        }" > "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.json"
+        echo "{
+        \"Resolution\": \"T1w registered to dwi space in original resolution \",
+        \"Orientation\": \"RAS\",
+        \"Space\":\"dwi\"
+        }" > "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_T1w.json"
+
         mkdir -p "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms/"
         rsync -av ${workdir}/${subj}${sessionpath}xfms/ \
             "${outputdir}/dwi-preproc/${subj}${sessionpath}xfms/"
@@ -320,7 +333,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
     if [[ "${subfields}" -eq 1 ]]; then 
 
-            mkdir -p ${workdir}/${subj}/freesurfer/tmpd
+            mkdir -p ${workdir}/${subj}/freesurfer/tmp
 
             for structure in thalamus hippo-amygdala brainstem; do 
 

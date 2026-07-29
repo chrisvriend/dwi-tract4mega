@@ -13,7 +13,9 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 
 Usage() {
-  echo "Usage: $0 <path_to_spec.json>"
+  echo "Usage: $0 <path_to_spec.json> [--all]"
+  echo "  --all   Run QC for every subject folder found in \${outputdir}/dwi-preproc,"
+  echo "          overriding any 'subj' set in the spec.json file."
   exit 1
 }
 
@@ -24,7 +26,18 @@ log() {
     echo -e "${color}$*${NC}"
 }
 
-if [[ $# -ne 1 ]]; then
+# Summary tracking
+declare -a COMPLETED_LIST=()
+declare -a FAILED_LIST=()
+declare -a SKIPPED_LIST=()
+
+all_flag=0
+
+if [[ $# -eq 1 ]]; then
+  all_flag=0
+elif [[ $# -eq 2 && "$2" == "--all" ]]; then
+  all_flag=1
+else
   Usage
 fi
 
@@ -144,6 +157,7 @@ run_qc_for_subject_session() {
     # If only output/subject are present and no inputs, skip
     if (( ${#QC_ARGS[@]} <= 4 )); then
         log "$RED" "No QC inputs found for ${subj} ${session}. Skipping."
+        SKIPPED_LIST+=( "${subj}${sessionfile%_}" )
         return
     fi
 
@@ -154,11 +168,13 @@ run_qc_for_subject_session() {
     if [[ ${ret} -ne 0 ]]; then
         log "$RED" "QC script failed for ${subj} ${session} (exit code ${ret})"
         error=1
+        FAILED_LIST+=( "${subj}${sessionfile%_} (exit ${ret})" )
     else
         log "$GREEN" "-- ------------------ --"
         log "$GREEN" "DWI QC completed for subject: ${subj} ${session}"
         log "$GREEN" "-- ------------------ --"
         echo
+        COMPLETED_LIST+=( "${subj}${sessionfile%_}" )
     fi
 }
 
@@ -190,9 +206,14 @@ run_all() {
 }
 
 # Main logic:
-# - If subj is set in JSON, run only for that subject (and provided/auto-discovered sessions)
-# - If subj is not set, run for all subjects under bidsdir
-if [[ -z "${subj}" ]]; then
+# - If --all was passed on the command line, run for every subject under
+#   outputdir/dwi-preproc, regardless of any 'subj' set in the JSON.
+# - Else if subj is set in JSON, run only for that subject (and provided/auto-discovered sessions)
+# - Else (subj not set, no --all), run for all subjects under bidsdir
+if [[ ${all_flag} -eq 1 ]]; then
+    log "$BLUE" "--all specified. Running QC for all subjects in ${outputdir}/dwi-preproc."
+    run_all
+elif [[ -z "${subj}" ]]; then
     log "$BLUE" "No subject specified in JSON. Running QC for all subjects in ${bidsdir}."
     run_all
 else
@@ -222,6 +243,35 @@ else
         run_qc_for_subject_session "${subj}" "${session}"
     fi
 fi
+
+# Summary report
+echo
+log "$BLUE" "======================================"
+log "$BLUE" " QC RUN SUMMARY"
+log "$BLUE" "======================================"
+log "$GREEN" "Completed: ${#COMPLETED_LIST[@]}"
+log "$RED"   "Failed:    ${#FAILED_LIST[@]}"
+log "$BLUE"  "Skipped:   ${#SKIPPED_LIST[@]}"
+echo
+
+if (( ${#FAILED_LIST[@]} > 0 )); then
+    log "$RED" "-- Failed --"
+    for item in "${FAILED_LIST[@]}"; do
+        log "$RED" "  ${item}"
+    done
+    echo
+fi
+
+if (( ${#SKIPPED_LIST[@]} > 0 )); then
+    log "$BLUE" "-- Skipped (no QC inputs found) --"
+    for item in "${SKIPPED_LIST[@]}"; do
+        log "$BLUE" "  ${item}"
+    done
+    echo
+fi
+
+log "$BLUE" "======================================"
+echo
 
 # Optional final message using `error` flag if you keep it
 if [[ ${error:-0} -ne 1 ]]; then

@@ -64,6 +64,11 @@ case "$pipeline" in
     dwi-tracto)
         ${scriptdir}/dwi-tracto_wrapper.sh ${specfile}
     ;;
+    dwi-qc)
+        ${scriptdir}/dwi-qc_wrapper.sh ${specfile}
+    ;;
+    dwi-send)
+        ${scriptdir}/dwi-send_wrapper.sh ${specfile}
     dtitk)
     :
     ;;

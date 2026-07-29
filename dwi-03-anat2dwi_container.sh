@@ -416,9 +416,6 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
     fi
     
     for label in 5tt-hsvs gmwm; do
-        mri_convert "${workanat}/${pref}space-dwi_res-high_desc-${label}_probseg.nii.gz" \
-        --out_orientation RAS \
-            "${workanat}/${pref}space-dwi_res-high_desc-${label}_probseg.nii.gz"
         echo "{
         \"Resolution\": \"based on T1w used as input for FreeSurfer\",
         \"Orientation\": \"RAS\",

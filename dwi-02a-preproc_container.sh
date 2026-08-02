@@ -28,6 +28,13 @@ set -euo pipefail
 #export PATH=/opt/c3d/bin:$PATH
 export FSLOUTPUTTYPE=NIFTI_GZ
 
+on_error() {
+    local exit_code=$?
+    echo -e "\033[0;31m[dwi-02a] FAILED (exit ${exit_code}) at line ${BASH_LINENO[0]}: ${BASH_COMMAND}\033[0m" >&2
+    echo -e "\033[0;31m[dwi-02a] subject=${subj:-?} session=${session:-?}\033[0m" >&2
+}
+trap on_error ERR
+
 Usage() {
     echo "Usage: $0 -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> -c <scriptdir> -t <nthreads> [-z <session>]"
     echo ""
@@ -150,6 +157,24 @@ for dir in "$bidsdir" "$scriptdir"; do
     fi
 done
 
+# Preflight: fail fast (with a clear message) rather than deep inside the
+# pipeline if a required tool is missing from the container/environment.
+# dwicat in particular is only available in MRtrix3 >=3.0.4.
+required_cmds=(
+    jq fslnvols fslinfo fslmerge slicer
+    mrconvert mrinfo mrmath dwidenoise mrdegibbs dwiextract dwicat
+    topup mri_synthstrip antsRegistrationSyN.sh antsApplyTransforms N4BiasFieldCorrection
+)
+missing_cmds=()
+for cmd in "${required_cmds[@]}"; do
+    command -v "$cmd" >/dev/null 2>&1 || missing_cmds+=("$cmd")
+done
+if [[ ${#missing_cmds[@]} -gt 0 ]]; then
+    echo -e "${RED}missing required command(s): ${missing_cmds[*]}${NC}"
+    echo -e "${RED}(dwicat requires MRtrix3 >=3.0.4 -- check the container/module version)${NC}"
+    exit 1
+fi
+
 mkdir -p ${workdir}
 mkdir -p "${outputdir}/dwi-preproc"
 
@@ -172,6 +197,11 @@ mapfile -t dwi_runs < <(ls ${dwi_bids_dir}/${subj}${sessionfile}dir-*_dwi.nii.gz
 multirun=false
 if [[ ${#dwi_runs[@]} -ge 2 ]]; then
     multirun=true
+elif [[ ${#dwi_runs[@]} -eq 1 ]]; then
+    echo -e "${RED}found exactly one dir-<label> dwi run ($(basename "${dwi_runs[0]}")) for ${subj} - ${session}${NC}"
+    echo -e "${RED}the reversed phase-encode branch needs >=2 full dwi runs; a single dir-labeled run is not supported${NC}"
+    echo -e "${RED}either provide a second dir-<label> run, or rename this one to the plain '${subj}${sessionfile}dwi.nii.gz' convention (with matching .bval/.bvec/.json) to use the single-run branch${NC}"
+    exit 1
 elif [[ ! -f ${dwi_bids_dir}/${subj}${sessionfile}dwi.nii.gz || ! -f ${dwi_bids_dir}/${subj}${sessionfile}dwi.bvec ]]; then
     echo -e "${RED}no dwi scan/bvec found for ${subj} - ${session}${NC}"
     exit 1
@@ -299,6 +329,46 @@ if [[ "$multirun" == true ]]; then
         exit 1
     fi
 
+    # sanity check: all runs must be on the same voxel grid, or fslmerge/
+    # dwicat will error (or silently misbehave) further down the pipeline
+    ref_size=$(mrinfo -size "${run_mif[0]}" | awk '{print $1, $2, $3}')
+    ref_vox=$(mrinfo -vox "${run_mif[0]}" | awk '{printf "%.3f %.3f %.3f", $1, $2, $3}')
+    for i in "${!run_labels[@]}"; do
+        this_size=$(mrinfo -size "${run_mif[$i]}" | awk '{print $1, $2, $3}')
+        this_vox=$(mrinfo -vox "${run_mif[$i]}" | awk '{printf "%.3f %.3f %.3f", $1, $2, $3}')
+        if [[ "$this_size" != "$ref_size" ]]; then
+            log "${RED}" "run dir-${run_labels[$i]} has matrix size (${this_size}) that does not match dir-${run_labels[0]} (${ref_size})"
+            exit 1
+        fi
+        if [[ "$this_vox" != "$ref_vox" ]]; then
+            log "${RED}" "run dir-${run_labels[$i]} has voxel size (${this_vox}) that does not match dir-${run_labels[0]} (${ref_vox})"
+            exit 1
+        fi
+    done
+
+    # sanity check: warn (don't fail) if TotalReadoutTime differs a lot
+    # between runs -- usually indicates a metadata/protocol mismatch
+    ref_trt="${run_trt[0]}"
+    for i in "${!run_labels[@]}"; do
+        pct=$(awk -v a="${run_trt[$i]}" -v b="${ref_trt}" 'BEGIN { if (b==0) print "nan"; else printf "%.1f", (100*(a-b)/b < 0 ? -(100*(a-b)/b) : 100*(a-b)/b) }')
+        if awk -v p="$pct" 'BEGIN { exit !(p != "nan" && p+0 > 20) }'; then
+            log "${YELLOW}" "TotalReadoutTime for dir-${run_labels[$i]} (${run_trt[$i]}) differs by ${pct}% from dir-${run_labels[0]} (${ref_trt}) -- check the protocol/metadata"
+        fi
+    done
+
+    # informational: are the runs sampling different gradient directions
+    # (more angular coverage when combined) or repeats of the same scheme
+    # (mainly a distortion-correction/SNR benefit)?
+    if [[ ${#run_labels[@]} -eq 2 ]]; then
+        b0_1="${dwiworkdir}/${subj}${sessionfile}dir-${run_labels[0]}_dwi.bval"
+        b0_2="${dwiworkdir}/${subj}${sessionfile}dir-${run_labels[1]}_dwi.bval"
+        if [[ -f "$b0_1" && -f "$b0_2" ]] && diff -q "$b0_1" "$b0_2" >/dev/null 2>&1; then
+            log "${BLUE}" "dir-${run_labels[0]} and dir-${run_labels[1]} share identical b-values -- likely a repeated scheme (distortion-correction + SNR benefit; angular coverage unchanged)"
+        else
+            log "${BLUE}" "dir-${run_labels[0]} and dir-${run_labels[1]} sample different b-values/directions -- combining increases angular coverage"
+        fi
+    fi
+
     combined_label=$(IFS=+; echo "${run_labels[*]}")
 
     #----------------------------------------------------------------------
@@ -315,10 +385,23 @@ if [[ "$multirun" == true ]]; then
         dwiextract -nthreads ${nthreads} "${run_mif[$i]}" - -bzero |
             mrconvert - "$b0_nii" -force
         nb0=$(fslnvols "$b0_nii")
+        if [[ "$nb0" -eq 0 ]]; then
+            log "${RED}" "run dir-${label} has no b=0 volumes -- cannot use it for topup"
+            exit 1
+        fi
         for ((v = 0; v < nb0; v++)); do
             echo "${run_pefsl[$i]} ${run_trt[$i]}" >>"$refparams"
         done
         b0_niis+=("$b0_nii")
+    done
+
+    # quick QC: mean b0 per run, pre-topup
+    figdir="${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
+    for i in "${!run_labels[@]}"; do
+        mean_b0="${fmapworkdir}/${subj}${sessionfile}dir-${run_labels[$i]}_desc-meanb0_epi.nii.gz"
+        mrmath "${b0_niis[$i]}" mean "$mean_b0" -axis 3 -force
+        slicer "$mean_b0" -a "${figdir}/${subj}${sessionfile}dir-${run_labels[$i]}_desc-pretopup_epi.png" >/dev/null 2>&1 || true
+        rm -f "$mean_b0"
     done
 
     topup_input="${fmapworkdir}/${subj}${sessionfile}dir-${combined_label}_space-dwi_desc-4topup_epi.nii.gz"
@@ -366,6 +449,12 @@ if [[ "$multirun" == true ]]; then
         cp ${subj}${sessionfile}topup_*.log ${outputdir}/dwi-preproc/${subj}/log
     fi
 
+    # quick QC: mean unwarped b0, post-topup
+    mean_unwarped="${fmapworkdir}/${subj}${sessionfile}desc-meanunwarped_epi.nii.gz"
+    mrmath "$unwarped" mean "$mean_unwarped" -axis 3 -force
+    slicer "$mean_unwarped" -a "${figdir}/${subj}${sessionfile}space-dwi_desc-posttopup_epi.png" >/dev/null 2>&1 || true
+    rm -f "$mean_unwarped"
+
     #----------------------------------------------------------------------
     # concatenate the full denoised/deringed series with dwicat (matches
     # b0 intensity scaling across runs), then export back to nii+bval+bvec
@@ -373,7 +462,23 @@ if [[ "$multirun" == true ]]; then
     cat_mif="${dwiworkdir}/${subj}${sessionfile}dir-${combined_label}_desc-dns+degibbs_dwi.mif"
 
     if [[ ! -f "$cat_mif" ]]; then
-        dwicat "${run_mif[@]}" "$cat_mif" -nthreads ${nthreads} -force
+        # rough brain mask (from the first run's mean b0, native/distorted
+        # space) so dwicat's b0 intensity matching isn't skewed by
+        # background/non-brain voxels. This is a throwaway mask, not the
+        # analysis mask used later for eddy.
+        dwicat_mask="${dwiworkdir}/${subj}${sessionfile}desc-dwicattmp_mask.nii.gz"
+        first_meanb0="${dwiworkdir}/${subj}${sessionfile}desc-dwicattmp_meanb0.nii.gz"
+        dwiextract -nthreads ${nthreads} "${run_mif[0]}" - -bzero |
+            mrmath - mean "$first_meanb0" -axis 3 -force
+        mri_synthstrip -i "$first_meanb0" --mask "$dwicat_mask" >/dev/null 2>&1 || true
+
+        if [[ -f "$dwicat_mask" ]]; then
+            dwicat "${run_mif[@]}" "$cat_mif" -mask "$dwicat_mask" -nthreads ${nthreads} -force
+        else
+            log "${YELLOW}" "could not build a rough mask for dwicat -- running without -mask"
+            dwicat "${run_mif[@]}" "$cat_mif" -nthreads ${nthreads} -force
+        fi
+        rm -f "$dwicat_mask" "$first_meanb0"
     fi
 
     cat_nii="${dwiworkdir}/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz"
@@ -487,7 +592,7 @@ dwi_PE=$(cat ${dwi_json_path} | jq -r '.PhaseEncodingDirection')
 if [ -z ${dwi_trt} ] || [ -z ${dwi_PE} ]; then
     echo -e "${RED}no TotalReadOutTime or PhaseEncodingDirection found in dwi json file${NC}"
     echo
-    continue
+    exit 1
 fi
 
 # determine settings for topup
@@ -606,7 +711,7 @@ if [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -ne 0 ]; then
         echo -e "${GREEN} PE directions of dwi and fmap are opposites.${NC}"
     else
         echo -e "${RED}PE directions of dwi and fmap are NOT opposites.${NC}"
-        continue
+        exit 1
     fi
 
     # determine letter for opposite PE
@@ -702,14 +807,14 @@ elif [ ${#fmap_samePE[@]} -ne 0 ] && [ ${#fmap_otherPE[@]} -ne 0 ]; then
         echo -e "${GREEN}The fmap PE directions are opposites.${NC}"
     else
         echo -e "${RED}The fmap PE directions are NOT opposites.${NC}"
-        continue
+        exit 1
     fi
 
     if [[ "$dwi_PE" == "$PE_same" ]]; then
         echo -e "${GREEN} PE directions of dwi and 'same' fmap are consistent.${NC}"
     else
         echo -e "${RED}PE directions of dwi and fmap are NOT opposites.${NC}"
-        continue
+        exit 1
     fi
 
     opposite_pe1=$(get_opposite_PE "$PE_other")
@@ -717,7 +822,7 @@ elif [ ${#fmap_samePE[@]} -ne 0 ] && [ ${#fmap_otherPE[@]} -ne 0 ]; then
         echo -e "${GREEN} PE directions of dwi and 'opposite' fmap are consistent.${NC}"
     else
         echo -e "${RED}PE directions of dwi and fmap are NOT opposites.${NC}"
-        continue
+        exit 1
     fi
 
     # get directions

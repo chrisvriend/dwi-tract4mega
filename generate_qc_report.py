@@ -1796,7 +1796,7 @@ def build_report(sections, output_path, subject=None, extra_nav=None):
 
 def main():
     p = argparse.ArgumentParser(description="Generate DWI preprocessing QC HTML report")
-    p.add_argument("--noise", required=True, help="Path to dwidenoise noise map")
+    p.add_argument("--noise", default=None, help="Path to dwidenoise noise map")
     p.add_argument("--eddy-json", default=None, help="Path to eddy_quad qc.json")
     p.add_argument("--eddy-rms", default=None, help="Path to *.eddy_movement_rms")
     p.add_argument("--eddy-outliers", default=None, help="Path to *.eddy_outlier_report")
@@ -1853,9 +1853,13 @@ def main():
     p.add_argument("--subject", default=None, help="Subject label, e.g. sub-01")
     args = p.parse_args()
 
-    sections = [
+    sections=[]
+    
+    if args.noise:
+
+        sections = [
         ("noise", "Noise Map", noise_section(args.noise)),
-    ]
+        ]
 
     extra_nav = []
 

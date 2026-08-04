@@ -27,6 +27,7 @@
 set -euo pipefail
 #export PATH=/opt/c3d/bin:$PATH
 export FSLOUTPUTTYPE=NIFTI_GZ
+export APPTAINER_BIND="/scratch/anw/cvriend,/data/anw/anw-work,/data/anw/anw-archive"
 
 on_error() {
     local exit_code=$?

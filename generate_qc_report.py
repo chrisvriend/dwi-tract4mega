@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate an fMRIPrep-style QC HTML report for DWI preprocessing outputs.
+Generate QC HTML report for DWI preprocessing outputs.
 
 Currently implements:
   - Noise map section (dwidenoise output)
@@ -12,8 +12,6 @@ Currently implements:
   - Tractogram QC (whole-brain .tck overlaid on T1, colored by fibre orientation)
   - Atlas connectivity matrix QC (normalized tck2connectome CSV heatmap)
 
-No external network/CDN dependency, no display server required
-(matplotlib runs headless via the Agg backend).
 """
 
 import argparse

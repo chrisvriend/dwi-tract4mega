@@ -1,8 +1,7 @@
 #!/bin/bash
 
 jsonfile=$1
-scriptdir=/home/anw/cvriend/my-scratch/dwi-tractography-pipeline/dwi-tract4mega
-#/tracto
+scriptdir=/tracto
 
 export FSLOUTPUTTYPE=NIFTI_GZ
 

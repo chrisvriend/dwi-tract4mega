@@ -5,11 +5,11 @@
 # Date: Nov 05 2025 (modified Aug 2026)
 # Description: prepare dwi scan for eddy and perform topup
 #
-# Two scenarios are now supported, auto-detected from what's on disk:
+# Two scenarios are now supported, auto-detected:
 #
 #  (A) SINGLE-RUN: one dwi.nii.gz for the subject/session, optionally with
 #      short b0-only fieldmap(s) in fmap/ used purely to drive topup.
-#      -> original pipeline, unchanged.
+#      
 #
 #  (B) MULTI-RUN / REVERSED PHASE-ENCODE: two or more FULL dwi runs for the
 #      subject/session, named with the BIDS `dir-<label>` entity

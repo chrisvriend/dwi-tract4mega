@@ -8,7 +8,7 @@ jsonfile=$1
 
 # Bin width (s/mm^2) used to group b-values that should represent the same
 # shell but differ slightly due to scanner rounding (e.g. 999.98 vs 1000).
-BVAL_BIN_WIDTH=50
+BVAL_BIN_WIDTH=20
 
 # Colors
 NC='\033[0m'
@@ -45,9 +45,9 @@ for var in bidsdir outputdir ; do
   fi
 done  
 
-SUMMARY_FILE="${outputdir}/tosend/parameter_value_frequencies.json"
-REPORT_FILE="${outputdir}/tosend/parameter_report.html"
-mkdir -p "${outputdir}/tosend"
+SUMMARY_FILE="${outputdir}/params/parameter_value_frequencies.json"
+REPORT_FILE="${outputdir}/params/parameter_report.html"
+mkdir -p "${outputdir}/params"
 
 ########################################
 # PARAMETER LISTS
@@ -76,11 +76,11 @@ DWI_FMAP_PARAMS=(
   "ProtocolName"
 )
 
-FMAP_EXTRA_PARAMS=(
-  "EchoTime1"
-  "EchoTime2"
-  "Units"
-)
+# FMAP_EXTRA_PARAMS=(
+#   "EchoTime1"
+#   "EchoTime2"
+#   "Units"
+# )
 
 T1W_PARAMS=(
   "MagneticFieldStrength"
@@ -176,7 +176,7 @@ log_bvals() {
       b = int((v + w/2) / w) * w
       printf "dwi\tbvalue\t%d\n", b
     }
-  ' >> "${outputdir}/tosend/.param_values_tmp.tsv"
+  ' >> "${outputdir}/params/.param_values_tmp.tsv"
 }
 
 escape_json_string() {
@@ -192,14 +192,14 @@ log_param_value() {
   local value="$3"
 
   value="${value//$'\n'/ }"
-  echo -e "${modality}\t${param}\t${value}" >> "${outputdir}/tosend/.param_values_tmp.tsv"
+  echo -e "${modality}\t${param}\t${value}" >> "${outputdir}/params/.param_values_tmp.tsv"
 }
 
 ########################################
 # MAIN LOOP: iterate subjects & sessions
 ########################################
 
-> "${outputdir}/tosend/.param_values_tmp.tsv"
+> "${outputdir}/params/.param_values_tmp.tsv"
 
 find "$bidsdir" -maxdepth 1 -type d -name "sub-*" | sort | while read -r SUBDIR; do
   SUBID=$(basename "$SUBDIR")
@@ -267,11 +267,11 @@ find "$bidsdir" -maxdepth 1 -type d -name "sub-*" | sort | while read -r SUBDIR;
         fmap_params["$p"]="$val"
         log_param_value "fmap" "$p" "$val"
       done
-      for p in "${FMAP_EXTRA_PARAMS[@]}"; do
-        val=$(get_field_or_na "${FMAP_JSON:-/dev/null}" "$p")
-        fmap_params["$p"]="$val"
-        log_param_value "fmap" "$p" "$val"
-      done
+      # for p in "${FMAP_EXTRA_PARAMS[@]}"; do
+      #   val=$(get_field_or_na "${FMAP_JSON:-/dev/null}" "$p")
+      #   fmap_params["$p"]="$val"
+      #   log_param_value "fmap" "$p" "$val"
+      # done
     fi
 
     # T1w params
@@ -327,9 +327,9 @@ find "$bidsdir" -maxdepth 1 -type d -name "sub-*" | sort | while read -r SUBDIR;
     OUTPUT_JSON+="}"
 
     if [[ -n "$SESSION_LABEL" ]]; then
-      OUTFILE="${outputdir}/tosend/${SUBID}_${SESSION_LABEL}_parameters.json"
+      OUTFILE="${outputdir}/params/${SUBID}_${SESSION_LABEL}_parameters.json"
     else
-      OUTFILE="${outputdir}/tosend/${SUBID}_parameters.json"
+      OUTFILE="${outputdir}/params/${SUBID}_parameters.json"
     fi
 
     echo "$OUTPUT_JSON" | jq '.' > "$OUTFILE"
@@ -344,7 +344,7 @@ done
 # BUILD FREQUENCY SUMMARY WITH jq
 ########################################
 
-if [[ ! -s "${outputdir}/tosend/.param_values_tmp.tsv" ]]; then
+if [[ ! -s "${outputdir}/params/.param_values_tmp.tsv" ]]; then
   log "$RED" "No parameter values were logged; frequency summary will be empty."
   echo '{}' > "$SUMMARY_FILE"
 else
@@ -352,7 +352,7 @@ else
   # nested objects, and jq treats `null + 1` as `1`, so a plain reduce with +=
   # does everything the earlier has()-check version was trying to do, without
   # the "Invalid path expression" error that comes from assigning into a variable.
-  awk -F '\t' 'NF==3 {print}' "${outputdir}/tosend/.param_values_tmp.tsv" \
+  awk -F '\t' 'NF==3 {print}' "${outputdir}/params/.param_values_tmp.tsv" \
     | jq -Rn '
       reduce ( inputs | split("\t") | {modality: .[0], param: .[1], value: .[2]} ) as $row (
         {};

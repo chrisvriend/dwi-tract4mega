@@ -69,6 +69,10 @@ case "$pipeline" in
     ;;
     dwi-send)
         ${scriptdir}/dwi-send_wrapper.sh ${specfile}
+    ;;
+    dwi-params)
+        ${scriptdir}/dwi-extract_parameters.sh ${specfile}
+    ;;
     dtitk)
     :
     ;;

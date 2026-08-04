@@ -282,7 +282,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
         -all -parallel -threads ${threads}
 
     
-        fi
+    fi
 
    log $BLUE "FreeSurfer finished for ${subj}"
 

@@ -147,5 +147,14 @@ if [[ ${error} -ne 1 ]]; then
   log "$GREEN" "DWI preprocessing completed for subject: ${subj} ${session}"
   log "$GREEN" "-- ------------------ --"
   echo
-  rm -rf "${workdir}/${subj}"
+
+  if ! out=$(rm -rf "${workdir}/${subj}" 2>&1); then
+      if grep -q "Device or resource busy" <<< "$out"; then
+          # Optionally log that cleanup was partial/failed non-fatally
+          log "$YELLOW" "Warning: could not fully remove ${workdir}/${subj}: Device or resource busy"
+      else
+          printf '%s\n' "$out" >&2
+          exit 1
+      fi
+  fi
 fi

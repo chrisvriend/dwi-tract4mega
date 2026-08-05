@@ -5,24 +5,28 @@
 ########################
 
 #SBATCH --job-name=dwipipeline
-#SBATCH --partition=luna-cpu-tiny
-#SBATCH --qos=anw-cpu
+#SBATCH --partition=defq
 #SBATCH --cpus-per-task=1
+#SBATCH --qos=normal
 #SBATCH --mem=20M
 #SBATCH --time=00:10:00
 #SBATCH --nice=2000
 #SBATCH --output=%x_%A_%a.log
-#SBATCH --array=1-1%1
+#SBATCH --array=2-3%3
 # NOTE: --array above is a fallback only. In practice this script is
 # submitted via submit_pipeline.sh, which passes --array=1-N%throttle
 # on the sbatch command line, and command-line flags override this.
 
 set -euo pipefail
 
+ml apptainer
 templatejson=$1
-containerpath=/scratch/anw/cvriend/TractoFriend.sif
+containerpath=/net/beegfs/users/P042819/TractoFriend.sif
+#hostworkdir=/scratch/users/P042819/work
 
-export FSLOUTPUTTYPE=NIFTI_GZ
+#export FSLOUTPUTTYPE=NIFTI_GZ
+#export APPTAINER_BINDPATH="/net/beegfs/users/P042819,/home/P042819,/scratch/users/P042819"
+
 
 Usage() {
   echo "Usage: $0 <path_to_spec.json>"
@@ -56,6 +60,10 @@ for var in bidsdir outputdir workdir nstreamlines; do
   fi
 done  
 
+mkdir -p ${workdir} ${outputdir}
+
+
+
 cd ${bidsdir}
 
 # FIX: build a proper bash array of subject dirs instead of piping
@@ -76,10 +84,16 @@ subjspecjson="spec_${subj}.json"
 echo "Submitting preprocessing and tracto jobs for ${subj} ${session:-}..."
 
 sessionpath="${session:+/${session}/}"
-sessionfile="${session:+${session}_}"
+sessionfile="${session:+_${session}_}"
 
 logdir="${outputdir}/logs/${subj}${sessionpath}"
-mkdir -p "${logdir}"
+tmpdir="${workdir}/${subj}${sessionpath}tmp"
+mkdir -p "${logdir}" "${tmpdir}"
+
+
+# define bind folders for apptainer 
+bindcmd="${bidsdir},${workdir},${outputdir},${tmpdir}:/scratch"
+
 
 # ============================================================
 # Expected output files (used for skip-logic)
@@ -87,6 +101,8 @@ mkdir -p "${logdir}"
 preproc_nifti="${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz"
 preproc_bvec="${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec"
 preproc_qc="${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz"
+preproc_anat="${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz"
+preproc_atlas="${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-300P7N_dseg.nii.gz"
 
 tracto_file="${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck"
 conn_file="${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-300P7N_desc-streams_connmatrix.csv"
@@ -115,18 +131,17 @@ submit_job () {
 
     sbatch --parsable \
         --job-name="${jobname}" \
-        --partition=luna-cpu-short \
-        --qos=anw-cpu \
+        --partition=defq \
         --time="${time}" \
         --mem="${mem}" \
         --cpus-per-task="${cpus}" \
-        --output="${logdir}/${jobname}_%j.log" \
+        --output="${logdir}/${jobname}%j.log" \
         "${dep_arg[@]}" \
         --wrap="${cmd}"
 }
 
 # Per-stage resource settings
-PREPROC_CPUS=8;   PREPROC_MEM=8G; PREPROC_TIME=07:00:00
+PREPROC_CPUS=8;   PREPROC_MEM=28G; PREPROC_TIME=07:00:00
 TRACTO_CPUS=16;   TRACTO_MEM=12G;   TRACTO_TIME=04:00:00
 QC_CPUS=1;        QC_MEM=2G;       QC_TIME=00:30:00
 
@@ -135,11 +150,11 @@ last_job=""
 # ============================================================
 # STAGE 1: dwi-preproc + eddy (skip if outputs already exist)
 # ============================================================
-if [ -f "${preproc_nifti}" ] && [ -f "${preproc_bvec}" ] && [ -f "${preproc_qc}" ]; then
+if [ -f "${preproc_nifti}" ] && [ -f "${preproc_bvec}" ] && [ -f "${preproc_qc}" ]  && [ -f "${preproc_anat}" ]  && [ -f "${preproc_atlas}" ]; then
     echo "Preprocessing already done for ${subj} ${session:-}, skipping preproc job."
     job_id_preproc=""
 else
-    cmd_preproc="apptainer run --bind ${bidsdir},${outputdir},${workdir} ${containerpath} dwi-preproc ${subjspecjson}"
+    cmd_preproc="apptainer run --cleanenv --bind ${bindcmd} --env TMPDIR=${tmpdir} --env TMP=${tmpdir} --env TEMP=${tmpdir} ${containerpath} dwi-preproc ${subjspecjson}"
     job_id_preproc=$(submit_job "dwi-preproc_${subj}${sessionfile}" "${cmd_preproc}" "${last_job}" "${PREPROC_CPUS}" "${PREPROC_MEM}" "${PREPROC_TIME}")
     echo "Submitted dwi-preproc job: ${job_id_preproc}"
     last_job="${job_id_preproc}"
@@ -152,7 +167,7 @@ if [ -f "${tracto_file}" ] && [ -f "${conn_file}" ]; then
     echo "Tractography already done for ${subj} ${session:-}, skipping tracto job."
     job_id_tracto=""
 else
-    cmd_tracto="apptainer run --bind ${bidsdir},${outputdir},${workdir} ${containerpath} dwi-tracto ${subjspecjson}"
+   cmd_tracto="apptainer run --cleanenv --bind ${bindcmd} --env TMPDIR=${tmpdir} --env TMP=${tmpdir} --env TEMP=${tmpdir} ${containerpath} dwi-tracto ${subjspecjson}"
     job_id_tracto=$(submit_job "dwi-tracto_${subj}${sessionfile}" "${cmd_tracto}" "${last_job}" "${TRACTO_CPUS}" "${TRACTO_MEM}" "${TRACTO_TIME}")
     echo "Submitted dwi-tracto job: ${job_id_tracto}"
     last_job="${job_id_tracto}"
@@ -161,7 +176,7 @@ fi
 # ============================================================
 # STAGE 3: dwi-qc (always runs)
 # ============================================================
-cmd_qc="apptainer run --bind ${bidsdir},${outputdir},${workdir} ${containerpath} dwi-qc ${subjspecjson}"
+cmd_qc="apptainer run --cleanenv --bind ${bindcmd} --env TMPDIR=${tmpdir} --env TMP=${tmpdir} --env TEMP=${tmpdir} ${containerpath} dwi-qc ${subjspecjson}"
 job_id_qc=$(submit_job "dwi-qc_${subj}${sessionfile}" "${cmd_qc}" "${last_job}" "${QC_CPUS}" "${QC_MEM}" "${QC_TIME}")
 echo "Submitted dwi-qc job: ${job_id_qc}"
 last_job="${job_id_qc}"

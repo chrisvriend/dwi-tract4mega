@@ -74,14 +74,10 @@ if [[ $missing -eq 1 ]]; then
     Usage
 fi
 
-# Set session path/file
-if [[ -z "${session}" ]]; then
-    sessionpath="/"
-    sessionfile="_"
-else
-    sessionpath="/${session}/"
-    sessionfile="_${session}_"
-fi
+# define session-specific paths and filenames (if session is empty, these will be empty strings)
+sessionpath="${session:+/${session}/}"
+sessionfile="${session:+_${session}_}"
+
 
 ##############
 # CHECK FILES

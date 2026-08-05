@@ -70,15 +70,9 @@ if [[ $missing -eq 1 ]]; then
 fi
 
 ###############################################################################
-
-# Set session path/file
-if [[ -z "${session}" ]]; then
-    sessionpath="/"
-    sessionfile="_"
-else
-    sessionpath="/${session}/"
-    sessionfile="_${session}_"
-fi
+# define session-specific paths and filenames (if session is empty, these will be empty strings)
+sessionpath="${session:+/${session}/}"
+sessionfile="${session:+_${session}_}"
 
 
 if [ ! -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ]; then 

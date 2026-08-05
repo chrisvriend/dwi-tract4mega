@@ -82,14 +82,10 @@ if [[ $missing -eq 1 ]]; then
     Usage
 fi
 
-# Set session path/file
-if [[ -z "${session}" ]]; then
-    sessionpath="/"
-    sessionfile="_"
-else
-    sessionpath="/${session}/"
-    sessionfile="_${session}_"
-fi
+# define session-specific paths and filenames (if session is empty, these will be empty strings)
+sessionpath="${session:+/${session}/}"
+sessionfile="${session:+_${session}_}"
+
 
 # Check if eddy already completed
 if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ] &&
@@ -156,7 +152,7 @@ if [[ -f "${basedir}/index.txt" ]]; then
         log "$RED" "index.txt (${idxcount} entries) does not match number of volumes in ${DWImain} (${nvols})"
         exit 1
     fi
-    log "$BLUE" "using existing multi-run index.txt from dwi-02a"
+    log "$BLUE" "using existing index.txt from dwi-02a"
 else
     printf '1 %.0s' $(seq 1 "$nvols") >"${basedir}/index.txt"
 fi

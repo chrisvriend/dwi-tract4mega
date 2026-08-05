@@ -179,14 +179,9 @@ fi
 mkdir -p ${workdir}
 mkdir -p "${outputdir}/dwi-preproc"
 
-# Set session path/file
-if [[ -z "${session}" ]]; then
-    sessionpath="/"
-    sessionfile="_"
-else
-    sessionpath="/${session}/"
-    sessionfile="_${session}_"
-fi
+# define session-specific paths and filenames (if session is empty, these will be empty strings)
+sessionpath="${session:+/${session}/}"
+sessionfile="${session:+_${session}_}"
 
 dwi_bids_dir="${bidsdir}/${subj}${sessionpath}dwi"
 
@@ -584,7 +579,7 @@ fi
 ###############################################################################
 
 # Specify the path to the DWI JSON sidecar
-dwi_json_path=$(ls ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}dwi.json)
+dwi_json_path=$(ls ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.json)
 
 # extract TotalReadoutTime
 dwi_trt=$(cat ${dwi_json_path} | jq -r '.TotalReadoutTime')
@@ -629,7 +624,7 @@ echo "${PE_dwi_FSL} ${dwi_trt}" >${workdir}/${subj}${sessionpath}dwi/${subj}${se
 # Check for fieldmaps
 #----------------------------------------------------------------------
 # Specify the path to the fieldmap folder
-fieldmap_folder=${bidsdir}/${subj}${sessionpath}/fmap
+fieldmap_folder=${bidsdir}/${subj}${sessionpath}fmap
 
 # Check if the fieldmap folder exists
 if [ -d ${fieldmap_folder} ]; then
@@ -737,7 +732,7 @@ if [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -ne 0 ]; then
     # extract mean b0 from dwi
     dwiextract -nthreads ${nthreads} \
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
-        -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bval |
+        -fslgrad ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bvec ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bval |
         mrmath - mean ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-temp_epi.nii.gz -axis 3
 
     # create mean b0 from PA fieldmap
@@ -924,7 +919,7 @@ elif [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -eq 0 ]; then
         # extract first b0 vol from dwi
         dwiextract -nthreads ${nthreads} \
             ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
-            -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bval |
+            -fslgrad ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bvec ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bval |
             mrconvert - -coord 3 0 \
                 ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz -force
 
@@ -1028,7 +1023,7 @@ fi
 ### round bvals ###
 ###################
 cd ${workdir}/${subj}${sessionpath}dwi
-rsync -av ${bidsdir}/${subj}${sessionpath}/dwi/{${subj}${sessionfile}dwi.bv*,${subj}${sessionfile}dwi.json} ${workdir}/${subj}${sessionpath}dwi/
+rsync -av ${bidsdir}/${subj}${sessionpath}dwi/{${subj}${sessionfile}dwi.bv*,${subj}${sessionfile}dwi.json} ${workdir}/${subj}${sessionpath}dwi/
 chmod u+rw ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
 ${scriptdir}/round_bvals.py ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
 
@@ -1042,7 +1037,7 @@ mrmath ${workdir}/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-
 # Get the mean b-zero (un-corrected)
 dwiextract -nthreads ${nthreads} \
     ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz - -bzero \
-    -fslgrad ${bidsdir}/${subj}${sessionpath}/dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval |
+    -fslgrad ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}*dwi.bvec ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval |
     mrmath - mean ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-meanb0-uncorrected_dwi.nii.gz -axis 3 -force
 
 if [[ ! -f ${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz ]]; then

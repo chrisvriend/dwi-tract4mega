@@ -17,7 +17,7 @@ log() {
 
 # Parse command line arguments
 Usage() {
-    echo "Usage: dwi-preproc|dwi-tracto|dtitk <specfile>"
+    echo "Usage: dwi-preproc|dwi-tracto|dwi-qc|dwi-send|dwi-params <specfile>"
     echo "select one of these pipelines and supply the path to the specfile (spec.json)"
     exit 1
 }

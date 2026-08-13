@@ -66,10 +66,8 @@ fi
 
 
 # define session-specific paths and filenames (if session is empty, these will be empty strings)
-sessionpath="${session:+/${session}/}"
-sessionfile="${session:+_${session}_}"
-
-
+sessionpath="/${session:+${session}/}"
+sessionfile="_${session:+${session}_}"
 
 # Helper function for colored output
 log() {

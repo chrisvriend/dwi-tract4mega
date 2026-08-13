@@ -82,9 +82,8 @@ jq --arg subj "$subj" '.subj = $subj' ${templatejson} > "spec_${subj}.json"
 subjspecjson="spec_${subj}.json"
 
 echo "Submitting preprocessing and tracto jobs for ${subj} ${session:-}..."
-
-sessionpath="${session:+/${session}/}"
-sessionfile="${session:+_${session}_}"
+sessionpath="/${session:+${session}/}"
+sessionfile="_${session:+${session}_}"
 
 logdir="${outputdir}/logs/${subj}${sessionpath}"
 tmpdir="${workdir}/${subj}${sessionpath}tmp"

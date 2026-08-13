@@ -71,9 +71,8 @@ fi
 
 ###############################################################################
 # define session-specific paths and filenames (if session is empty, these will be empty strings)
-sessionpath="${session:+/${session}/}"
-sessionfile="${session:+_${session}_}"
-
+sessionpath="/${session:+${session}/}"
+sessionfile="_${session:+${session}_}"
 
 if [ ! -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ]; then 
     log "$RED" "ERROR!! no preprocessed dwi scan found for ${subj} - ${session}"

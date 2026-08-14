@@ -180,10 +180,15 @@ mkdir -p ${workdir}
 mkdir -p "${outputdir}/dwi-preproc"
 
 # define session-specific paths and filenames (if session is empty, these will be empty strings)
-sessionpath="${session:+/${session}/}"
-sessionfile="${session:+_${session}_}"
+sessionpath="/${session:+${session}/}"
+sessionfile="_${session:+${session}_}"
 
 dwi_bids_dir="${bidsdir}/${subj}${sessionpath}dwi"
+
+echo -e ${YELLOW}----------------------${NC}
+echo -e ${dwi_bids_dir}
+echo -e ${YELLOW}----------------------${NC}
+
 
 #----------------------------------------------------------------------
 # detect scenario: single dwi run vs multiple full dwi runs (dir-<label>)

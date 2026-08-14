@@ -955,13 +955,14 @@ elif [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -eq 0 ]; then
         #Run Synb0-DISCO for fieldmap-free distortion correction
         if [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_d_smooth.nii.gz ]] ||
             [[ ! -f ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_u.nii.gz ]]; then
-            if [[ "${lowmem}" -eq 1 ]]; then
-                synb0 --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
-                    --output ${workdir}/${subj}${sessionpath}fmap/synb0/output --notopup --lowmem
-            else
+            # all synb0 runs are now lowmem by default, so no need to check for the lowmem flag
+            # if [[ "${lowmem}" -eq 1 ]]; then
+            #     synb0 --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
+            #         --output ${workdir}/${subj}${sessionpath}fmap/synb0/output --notopup --lowmem
+            # else
                 synb0 --input ${workdir}/${subj}${sessionpath}fmap/synb0/input \
                     --output ${workdir}/${subj}${sessionpath}fmap/synb0/output --notopup
-            fi
+            # fi
         fi
 
         fslmerge -t ${workdir}/${subj}${sessionpath}fmap/synb0/output/b0_all.nii.gz \

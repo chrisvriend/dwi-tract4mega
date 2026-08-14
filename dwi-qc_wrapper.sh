@@ -98,7 +98,7 @@ build_qc_args() {
         "reg-nodif|${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz"
         "reg-5ttvis|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_vis.nii.gz"
         "response-voxels|${outputdir}/dwi-tracto/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-response_voxels.nii.gz"
-        "response-underlay|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
+        "response-underlay|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
         "tract-tck|${outputdir}/dwi-tracto/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_tracto-100k.tck"
         "connectivity-matrix|${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-${atlas}_desc-streams_connmatrix.csv"
     )

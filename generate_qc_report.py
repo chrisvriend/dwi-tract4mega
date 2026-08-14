@@ -1405,7 +1405,8 @@ def disconnected_nodes_block(mat, node_labels=None):
     def node_name(i):
         if node_labels and i < len(node_labels):
             return str(node_labels[i])
-        return str(i + 1)  # 1-based to match typical atlas/connectome node numbering
+        return str(i)  
+      #  return str(i + 1)  # 1-based to match typical atlas/connectome node numbering
 
     stat_class = "stat-ok" if n_disc == 0 else "stat-bad"
     stat_card = f"""

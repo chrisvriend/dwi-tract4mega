@@ -81,7 +81,7 @@ if [ ! -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfil
 else 
 
     mkdir -p "${workdir}/${subj}/${sessionpath}dwi"
-    rsync -a "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc"* \
+    rsync -rltpD "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc"* \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
         "${workdir}/${subj}${sessionpath}dwi"
 fi
@@ -108,12 +108,12 @@ for folder in dwi figures qc; do
     mkdir -p "${outputdir}/dwi-tracto/${subj}${sessionpath}/${folder}"
 done
    
-rsync -a "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc"* \
+rsync -rltpD "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_desc"* \
     "${workdir}/${subj}${sessionpath}anat" 
 
 # In case there is a previous run
 if compgen -G "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}*" > /dev/null; then
-    rsync -a "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}"* \
+    rsync -rltpD "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}"* \
         "${outputdir}/dwi-tracto/${subj}${sessionpath}rpf/"* \
         "${workdir}/${subj}${sessionpath}dwi"
 fi
@@ -253,7 +253,7 @@ tckedit "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" \
     "${subj}${sessionfile}space-dwi_tracto-100k.tck" -number 100k -force
 
 
-rsync -av "${subj}${sessionfile}space-dwi_tissue-RGB.nii.gz" \
+rsync -rltpDv "${subj}${sessionfile}space-dwi_tissue-RGB.nii.gz" \
  "${subj}${sessionfile}space-dwi_desc-response_voxels.nii.gz" \
  "${subj}${sessionfile}space-dwi_tracto-100k.tck" \
  "${outputdir}/dwi-tracto/${subj}${sessionpath}qc"
@@ -292,10 +292,10 @@ slicer "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.g
 rm "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_mask.nii.gz" \
    "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_overlay.nii.gz"
 
-rsync -a "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}"* \
+rsync -rltpD "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}"* \
  *sift* *mu* \
     "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi"
-rsync -a *response* "${outputdir}/dwi-tracto/${subj}${sessionpath}rpf"
+rsync -rltpD *response* "${outputdir}/dwi-tracto/${subj}${sessionpath}rpf"
 mrconvert "${subj}${sessionfile}FOD-wm-norm.mif" \
     "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}tissue-WM-norm_fod.nii.gz"
 

@@ -302,16 +302,16 @@ mv *.qc eddyqc
 mv ${DWIout}.eddy_movement_rms ${DWIout}.eddy_outlier_report \
     "${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ./eddyqc
 
-rsync -av eddyqc/* "${outputdir}/dwi-preproc/${subj}${sessionpath}qc"
+rsync -rltpDv eddyqc/* "${outputdir}/dwi-preproc/${subj}${sessionpath}qc"
 rm -r eddyqc
 
-rsync -av ${subj}${sessionfile}*acqparams.tsv "${subj}${sessionfile}space-dwi_desc-preproc.eddy.json" \
+rsync -rltpDv ${subj}${sessionfile}*acqparams.tsv "${subj}${sessionfile}space-dwi_desc-preproc.eddy.json" \
     ${subj}${sessionfile}space-dwi*_dwi.* "${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz" \
     "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 
 # also keep the run-key (multi-run branch) if present, for provenance
 if [[ -f "${dwiworkdir}/${subj}${sessionfile}acq-dwi_desc-runkey.tsv" ]]; then
-    rsync -av "${dwiworkdir}/${subj}${sessionfile}acq-dwi_desc-runkey.tsv" \
+    rsync -rltpDv "${dwiworkdir}/${subj}${sessionfile}acq-dwi_desc-runkey.tsv" \
         "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi"
 fi
 

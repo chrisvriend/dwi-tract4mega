@@ -165,7 +165,7 @@ mkdir -p "${workdwi}/"
 if [ ! -f ${workdwi}/${pref}space-dwi_desc-nodif_dwi.nii.gz ] && 
 [ -f ${outdwi}/${pref}space-dwi_desc-nodif_dwi.nii.gz ]; then
 
-    rsync -av ${outdwi}/${pref}space-dwi_desc-nodif*.nii.gz \
+    rsync -rltpDv ${outdwi}/${pref}space-dwi_desc-nodif*.nii.gz \
     "${workdwi}/"
 
 elif [ ! -f ${workdwi}/${pref}space-dwi_desc-nodif_dwi.nii.gz ]; then
@@ -181,7 +181,7 @@ elif [ ! -f ${workdwi}/${pref}space-dwi_desc-nodif_dwi.nii.gz ]; then
         -i "${workdwi}/${pref}space-dwi_desc-nodif_dwi.nii.gz" \
         -o "${workdwi}/${pref}space-dwi_desc-nodif-brain_dwi.nii.gz" \
         --mask "${workdwi}/${pref}space-dwi_desc-brain_mask.nii.gz"
-    rsync -av ${workdwi}/${pref}space-dwi_desc-nodif*.nii.gz \
+    rsync -rltpDv ${workdwi}/${pref}space-dwi_desc-nodif*.nii.gz \
     ${workdwi}/${pref}space-dwi_desc-brain_mask.nii.gz \
         "${outdwi}/"
 
@@ -287,7 +287,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
             "${workanat}/${pref}space-dwi_res-FS_desc-brain_T1w.nii.gz"
         fix_strides "${workanat}/${pref}space-dwi_res-FS_desc-brain_T1w.nii.gz" "${hybridtemplate}"
           
-        rsync -av "${hybridtemplate}" \
+        rsync -rltpDv "${hybridtemplate}" \
         "${workanat}/${pref}space-dwi_res-FS_desc-brain_T1w.nii.gz" \
         "${workanat}/${pref}space-dwi_res-FS_T1w.nii.gz" \
          "${outanat}/"
@@ -306,7 +306,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
 
         mkdir -p "${outxfms}/"
-        rsync -av ${workxfms}/ \
+        rsync -rltpDv ${workxfms}/ \
             "${outxfms}/"
 
     fi
@@ -359,7 +359,7 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
     fi
 
     log "$BLUE" "FreeSurfer completed"
-    rsync -av "${workdir}/${subj}/freesurfer/${subj}" "${freesurferdir}"
+    rsync -rltpDv "${workdir}/${subj}/freesurfer/${subj}" "${freesurferdir}"
     touch ${freesurferdir}/${subj}/scripts/T1w-2-dwi.done
 fi
 
@@ -368,7 +368,7 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
     if [[ ! -f "${workdir}/${subj}/freesurfer/${subj}/scripts/T1w-2-dwi.done" ]]; then
         mkdir -p "${workdir}/${subj}/freesurfer/"
         log "$BLUE" "Copying FreeSurfer output to workdir"
-        rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
+        rsync -rltpDv "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
     fi
 
     mkdir -p "${workanat}"
@@ -418,7 +418,7 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
         \"Space\":\"dwi\"}" > "${workanat}/${pref}space-dwi_res-high_desc-${label}_probseg.json"
     done
 
-    rsync -a ${workanat}/${pref}space-dwi_res-high_desc* \
+    rsync -rltpD ${workanat}/${pref}space-dwi_res-high_desc* \
      ${hybridtemplate} \
      ${outanat}
 
@@ -435,7 +435,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     mkdir -p "${workdir}/${subj}/freesurfer/"
     mkdir -p ${workdir}/${subj}/anat/ 
     mkdir -p ${outputdir}/dwi-preproc/${subj}/anat
-    rsync -av "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
+    rsync -rltpDv "${freesurferdir}/${subj}" "${workdir}/${subj}/freesurfer/"
     cd "${workdir}/${subj}${sessionpath}"
 
     # Check if required output files exist
@@ -447,7 +447,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
         if [[ ! -f "${workdir}/${subj}/anat/${subj}_res-FS_desc-preproc_T1w.nii.gz" ]] ||
            [[ ! -f "${workdir}/${subj}/anat/${subj}_res-FS_desc-brain_T1w.nii.gz" ]]; then
 
-            rsync -azv --ignore-existing \
+            rsync -rltpDv --ignore-existing \
                 "${workdir}/${subj}/freesurfer/${subj}/mri/T1.mgz" \
                 "${workdir}/${subj}/freesurfer/${subj}/mri/brain.mgz" \
                 "${workdir}/${subj}/anat"
@@ -506,7 +506,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
             "${workdir}/${subj}/anat/${subj}_res-FS_desc-wm_probseg.nii.gz" 2 1
 
         # Transfer from work directory to output directory
-        rsync -a ${workdir}/${subj}/anat/*.* "${outputdir}/dwi-preproc/${subj}/anat/"
+        rsync -rltpD ${workdir}/${subj}/anat/*.* "${outputdir}/dwi-preproc/${subj}/anat/"
     fi
 
     ###########################
@@ -514,7 +514,7 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     ###########################
 
     if [[ -d "${outxfms}" ]]; then
-        rsync -a "${outxfms}" "${workdir}/${subj}${sessionpath}"
+        rsync -rltpD "${outxfms}" "${workdir}/${subj}${sessionpath}"
     fi
     mkdir -p "${workxfms}"
     cd "${workdwi}"
@@ -595,10 +595,10 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
     mkdir -p "${outdwi}/"
     mkdir -p "${outxfms}/"
 
-    rsync -a ${workdir}/${subj}/anat/* "${outputdir}/dwi-preproc/${subj}/anat"
-    rsync -a ${workxfms}/* "${outxfms}/"
+    rsync -rltpD ${workdir}/${subj}/anat/* "${outputdir}/dwi-preproc/${subj}/anat"
+    rsync -rltpD ${workxfms}/* "${outxfms}/"
 
-    rsync -a ${workanat}/${pref}space-dwi_res-high_desc-gmwm_probseg.* \
+    rsync -rltpD ${workanat}/${pref}space-dwi_res-high_desc-gmwm_probseg.* \
         ${workanat}/${pref}space-dwi_res-high_desc-5tt-hsvs_probseg.* \
         ${workanat}/${pref}space-dwi_res-FS_desc-brain_T1w.* \
         "${outanat}/"
@@ -674,7 +674,7 @@ fi
 
 # Schaefer Atlas
 log "$BLUE" "---Schaefer"
-rsync -av --ignore-existing "${FREESURFER_HOME}/subjects/fsaverage" "${SUBJECTS_DIR}"
+rsync -rltpDv --ignore-existing "${FREESURFER_HOME}/subjects/fsaverage" "${SUBJECTS_DIR}"
 
 for parcel in 300P7N 400P7N; do
     log "$BLUE" "Parcellation = ${parcel}"
@@ -763,9 +763,9 @@ for atlas in BNA 300P7N 400P7N; do
 done
 
 # Transfer files
-rsync -av ${workanat}/${pref}space-dwi_res-high_atlas* \
+rsync -rltpDv ${workanat}/${pref}space-dwi_res-high_atlas* \
     "${outanat}/"
-rsync -av --ignore-existing "${SUBJECTS_DIR}/${subj}" "${freesurferdir}"
+rsync -rltpDv --ignore-existing "${SUBJECTS_DIR}/${subj}" "${freesurferdir}"
 
 # Clean up
 if [[ -d "${workdir}/${subj}/freesurfer/fsaverage" ]]; then

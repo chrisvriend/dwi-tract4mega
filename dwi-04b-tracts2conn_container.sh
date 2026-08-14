@@ -99,14 +99,14 @@ done
 if [ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-odi_noddi.nii.gz ]; then
     log "$YELLOW" "Found noddi output in output directory"
     log "$YELLOW" "...copying to workdir"
-    rsync -a ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-odi_noddi.nii.gz \
+    rsync -rltpD ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-odi_noddi.nii.gz \
         ${workdir}/${subj}${sessionpath}dwi/
 fi
 
 if compgen -G "${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi*atlas-*" > /dev/null; then
     log "$YELLOW" "Found atlas files in output directory"
     log "$YELLOW" "...copying to workdir"
-    rsync -a ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi*atlas-* \
+    rsync -rltpD ${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi*atlas-* \
         ${workdir}/${subj}${sessionpath}anat/
 else 
     log "$RED" "!!!ERROR!!!"
@@ -227,7 +227,7 @@ done
 
 log "$GREEN" ""
 log "$GREEN" "finished tck2connectome. Transfer files"
-rsync -av ${workdir}/${subj}${sessionpath}conn/* ${outputdir}/dwi-tracto/${subj}${sessionpath}conn
+rsync -rltpDv ${workdir}/${subj}${sessionpath}conn/* ${outputdir}/dwi-tracto/${subj}${sessionpath}conn
 
 if compgen -G "${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-*_desc-*_connmatrix.csv" >/dev/null ; then
     log "$GREEN" "--------------------------------------------------"

@@ -409,7 +409,7 @@ if [[ "$multirun" == true ]]; then
     fslmerge -t "$topup_input" "${b0_niis[@]}"
     rm -f "${b0_niis[@]}"
 
-    rsync -a "$topup_input" "$refparams" "${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/"
+    rsync -rltpD "$topup_input" "$refparams" "${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/"
 
     #----------------------------------------------------------------------
     # topup
@@ -563,17 +563,17 @@ if [[ "$multirun" == true ]]; then
     fi
 
     cd "$fmapworkdir"
-    rsync -av ${subj}${sessionfile}space-dwi_desc-unwarped_epi* \
+    rsync -rltpDv ${subj}${sessionfile}space-dwi_desc-unwarped_epi* \
         ${subj}${sessionfile}space-dwi_desc-topup_fieldmap* \
         ${subj}${sessionfile}space-dwi_desc-topup* \
         ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
 
     # for QC
     for i in "${!run_labels[@]}"; do
-        rsync -a "${dwiworkdir}/${subj}${sessionfile}dir-${run_labels[$i]}_desc-noise_dwi.nii.gz" \
+        rsync -rltpD "${dwiworkdir}/${subj}${sessionfile}dir-${run_labels[$i]}_desc-noise_dwi.nii.gz" \
             "${outputdir}/dwi-preproc/${subj}${sessionpath}qc/" 2>/dev/null || true
     done
-    rsync -a "$runkey" "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"
+    rsync -rltpD "$runkey" "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"
 
     log "${GREEN}" "Preprocessing complete (multi-run / reversed phase-encode branch)."
     exit 0
@@ -878,7 +878,7 @@ elif [ ${#fmap_samePE[@]} -ne 0 ] && [ ${#fmap_otherPE[@]} -ne 0 ]; then
 
     refnvols=$(fslnvols ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz)
 
-    rsync -a ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
+    rsync -rltpD ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
         ${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv \
         ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
 
@@ -928,7 +928,7 @@ elif [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -eq 0 ]; then
             mrconvert - -coord 3 0 \
                 ${workdir}/${subj}${sessionpath}fmap/synb0/input/${subj}${sessionfile}dir-${dwidir}_space-dwi_desc-b0_epi.nii.gz -force
 
-        rsync -a ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
+        rsync -rltpD ${bidsdir}/${subj}${sessionpath}anat/${subj}${sessionfile}T1w.nii.gz \
             ${workdir}/${subj}${sessionpath}fmap/synb0/input
 
         N4BiasFieldCorrection -d 3 \
@@ -984,7 +984,7 @@ elif [ ${#fmap_samePE[@]} -eq 0 ] && [ ${#fmap_otherPE[@]} -eq 0 ]; then
 
     samedir=${dwidir}
     cd ${workdir}/${subj}${sessionpath}fmap
-    rsync -a ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
+    rsync -rltpD ${subj}${sessionfile}dir-${samedir}${otherdir}_space-dwi_desc-4topup_epi.nii.gz \
         ${subj}${sessionfile}dir-${samedir}${otherdir}_desc-refparams.tsv \
         ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
 fi
@@ -1029,7 +1029,7 @@ fi
 ### round bvals ###
 ###################
 cd ${workdir}/${subj}${sessionpath}dwi
-rsync -av ${bidsdir}/${subj}${sessionpath}dwi/{${subj}${sessionfile}dwi.bv*,${subj}${sessionfile}dwi.json} ${workdir}/${subj}${sessionpath}dwi/
+rsync -rltpDv ${bidsdir}/${subj}${sessionpath}dwi/{${subj}${sessionfile}dwi.bv*,${subj}${sessionfile}dwi.json} ${workdir}/${subj}${sessionpath}dwi/
 chmod u+rw ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
 ${scriptdir}/round_bvals.py ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval
 
@@ -1063,13 +1063,13 @@ if [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_de
 fi
 
 cd ${workdir}/${subj}${sessionpath}fmap
-rsync -av ${subj}${sessionfile}space-dwi_desc-unwarped_epi* \
+rsync -rltpDv ${subj}${sessionfile}space-dwi_desc-unwarped_epi* \
     ${subj}${sessionfile}space-dwi_desc-topup_fieldmap* \
     ${subj}${sessionfile}space-dwi_desc-topup* \
     ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
 
 # for QC
-rsync -av ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz \
+rsync -rltpDv ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz \
     ${outputdir}/dwi-preproc/${subj}${sessionpath}qc
 
 echo "Preprocessing complete."

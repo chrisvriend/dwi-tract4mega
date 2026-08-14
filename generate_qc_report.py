@@ -590,7 +590,7 @@ def brainmask_section(nodif_path, mask_path):
 # Response voxels QC
 # --------------------------------------------------------------------------
 
-RESPONSE_TISSUE_LABELS = ["WM", "GM", "CSF"]
+RESPONSE_TISSUE_LABELS = ["CSF", "GM", "WM"]
 RESPONSE_TISSUE_COLORS = ["#4fa3ff", "#ff9f4f", "#e14fff"]
 
 def response_voxels_section(voxels_path, underlay_path, underlay_label="nodif (b0)"):
@@ -1373,6 +1373,77 @@ def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
 # Connectivity matrix
 # --------------------------------------------------------------------------
 
+def find_disconnected_nodes(mat):
+    """
+    Identify nodes with zero streamlines to/from every other node.
+
+    `mat` is the raw (unnormalized) connectivity matrix, indexed [source,
+    target]. The diagonal (self-connections) is ignored, since a node can
+    have nonzero "streamlines to itself" in some tck2connectome outputs
+    while still being disconnected from the rest of the network. Returns
+    a sorted list of 0-based node indices whose row AND column (off-
+    diagonal) both sum to zero.
+    """
+    n = mat.shape[0]
+    off_diag = mat.copy()
+    np.fill_diagonal(off_diag, 0)
+    row_sums = off_diag.sum(axis=1)
+    col_sums = off_diag.sum(axis=0)
+    return [i for i in range(n) if row_sums[i] <= 0 and col_sums[i] <= 0]
+
+
+def disconnected_nodes_block(mat, node_labels=None):
+    """
+    Build the 'Disconnected Node Check' subsection HTML, to be placed
+    directly under the connectivity matrix image within the connectivity
+    section.
+    """
+    n = mat.shape[0]
+    disconnected = find_disconnected_nodes(mat)
+    n_disc = len(disconnected)
+
+    def node_name(i):
+        if node_labels and i < len(node_labels):
+            return str(node_labels[i])
+        return str(i + 1)  # 1-based to match typical atlas/connectome node numbering
+
+    stat_class = "stat-ok" if n_disc == 0 else "stat-bad"
+    stat_card = f"""
+      <div class="stat-card {stat_class}">
+        <div class="stat-label">Disconnected Nodes</div>
+        <div class="stat-value">{n_disc} / {n}</div>
+      </div>
+    """
+
+    if n_disc == 0:
+        detail_html = """
+        <p class="qc-desc">Every node has at least one streamline connecting it to
+        another node.</p>
+        """
+    else:
+        names = ", ".join(node_name(i) for i in disconnected)
+        detail_html = f"""
+        <p class="qc-desc" style="color:#e0a54e;">
+          {n_disc} node(s) have zero streamlines to or from any other node. This
+          typically indicates a parcellation/registration issue, an atlas label
+          that falls outside the brain mask or tracking mask, or a region too
+          small/peripheral for the tractography algorithm to seed or terminate
+          in reliably.
+        </p>
+        <p class="qc-desc"><strong>Disconnected node(s):</strong> {names}</p>
+        """
+
+    return f"""
+    <div id="disconnectednodes" class="subsection-anchor">
+      <h3 class="subsection-title">Disconnected Node Check</h3>
+      <div class="stat-grid">
+        {stat_card}
+      </div>
+      {detail_html}
+    </div>
+    """
+
+
 def connectivity_matrix_section(csv_path, atlas_name=None):
     if not csv_path:
         return ""
@@ -1443,6 +1514,8 @@ def connectivity_matrix_section(csv_path, atlas_name=None):
 
     atlas_html = f" for atlas <code>{atlas_name}</code>" if atlas_name else ""
 
+    disconnected_html = disconnected_nodes_block(mat)
+
     return f"""
     <section id="connectivity" class="qc-section">
       <h2>Connectivity Matrix{atlas_html}</h2>
@@ -1451,6 +1524,7 @@ def connectivity_matrix_section(csv_path, atlas_name=None):
         <img src="{uri}" class="mosaic"
              alt="Normalized connectivity matrix heatmap"/>
       </div>
+      {disconnected_html}
     </section>
     """
 
@@ -1937,16 +2011,19 @@ def main():
             )
 
     if args.connectivity_matrix:
+        connectivity_html = connectivity_matrix_section(
+            args.connectivity_matrix,
+            atlas_name=args.connectivity_atlas_name,
+        )
         sections.append(
             (
                 "connectivity",
                 "Connectivity",
-                connectivity_matrix_section(
-                    args.connectivity_matrix,
-                    atlas_name=args.connectivity_atlas_name,
-                ),
+                connectivity_html,
             )
         )
+        if 'id="disconnectednodes"' in connectivity_html:
+            extra_nav.append(("connectivity", "disconnectednodes", "Disconnected Nodes"))
 
     build_report(sections, args.output,
                  subject=args.subject, extra_nav=extra_nav)

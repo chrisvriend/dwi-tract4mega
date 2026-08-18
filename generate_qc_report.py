@@ -216,6 +216,31 @@ def optimize_png_bytes(png_bytes, max_width=1000):
     return out.getvalue()
 
 
+def normalize_png_bytes(png_bytes, target_width=1000):
+    """
+    Resize to an EXACT target width (upscaling as well as downscaling),
+    preserving aspect ratio, then PNG-optimize.
+
+    Unlike optimize_png_bytes (which only ever shrinks an oversized image
+    and leaves smaller ones alone), this is for images sourced from an
+    external tool -- e.g. eddy_quad's per-shell avg_b*.png / cnr*.png
+    summary images -- whose native pixel dimensions can vary from shell to
+    shell for reasons unrelated to the report layout. Without forcing a
+    common width, a shell whose native PNG happens to be smaller than
+    others renders visibly smaller in the report (the CSS max-height rule
+    only shrinks oversized images, it never grows undersized ones).
+    """
+    im = Image.open(BytesIO(png_bytes))
+    if im.mode not in ("RGB", "RGBA", "L"):
+        im = im.convert("RGBA")
+    if im.width != target_width and im.width > 0:
+        new_h = max(1, int(round(im.height * (target_width / im.width))))
+        im = im.resize((target_width, new_h), Image.Resampling.LANCZOS)
+    out = BytesIO()
+    im.save(out, format="PNG", optimize=True, compress_level=9)
+    return out.getvalue()
+
+
 def fig_to_base64(fig, max_width=1000):
     buf = BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.05,
@@ -224,6 +249,213 @@ def fig_to_base64(fig, max_width=1000):
     buf.seek(0)
     optimized = optimize_png_bytes(buf.read(), max_width=max_width)
     return base64.b64encode(optimized).decode("utf-8")
+
+# --------------------------------------------------------------------------
+# Bval / signal consistency check
+# --------------------------------------------------------------------------
+
+def _assign_shells(bvals, tol=100):
+    """
+    Cluster a bvals array into shells by proximity (handles the small
+    scanner-reported jitter around nominal shell values, e.g. 995/1000/1005).
+
+    Returns (shell_id, shell_bvals):
+      shell_id    : array, same length as bvals, giving each volume's shell index
+      shell_bvals : array of length n_shells, the mean nominal b-value of each shell,
+                    ordered by increasing shell index (which is also increasing b-value)
+    """
+    bvals = np.asarray(bvals, dtype=float)
+    uniq = np.unique(bvals)
+    uniq.sort()
+
+    groups = [[uniq[0]]]
+    for v in uniq[1:]:
+        if v - groups[-1][-1] <= tol:
+            groups[-1].append(v)
+        else:
+            groups.append([v])
+
+    val_to_shell = {}
+    shell_bvals = []
+    for i, grp in enumerate(groups):
+        shell_bvals.append(float(np.mean(grp)))
+        for v in grp:
+            val_to_shell[v] = i
+
+    shell_id = np.array([val_to_shell[v] for v in bvals], dtype=int)
+    return shell_id, np.array(shell_bvals)
+
+
+def bval_consistency_check(dwi_path, bval_path, mask_path=None,
+                            shell_tol=100, pct_tolerance=8.0):
+    """
+    Sanity-check that a bvals file actually matches its DWI series.
+
+    Rationale: per the Stejskal-Tanner signal equation, mean intra-cerebral
+    signal intensity should decrease (or at worst plateau near the noise
+    floor) as b-value increases. If the bvals file is wrong, shuffled, or
+    belongs to a different scan, this ordering tends to break -- some
+    nominally-higher-b shell will show a mean signal that is *not* lower
+    than a nominally-lower-b shell, by more than noise alone would explain.
+
+    `pct_tolerance` allows a shell's mean signal to be up to this percent
+    higher than the preceding (lower-b) shell before it's flagged, to avoid
+    false positives from noise / a shallow high-b plateau.
+
+    Returns a dict:
+      status: "pass" | "fail" | "inconclusive" | "error"
+      message: human-readable note (used for "error"/"inconclusive")
+      shells: list of {bval, n_volumes, mean_signal}, sorted by increasing b-value
+      violations: list of {lower_b, lower_mean, higher_b, higher_mean}
+    """
+    bval_path = Path(bval_path)
+    dwi_path = Path(dwi_path)
+
+    if not bval_path.exists():
+        return {"status": "error", "message": f"bvals file not found: {bval_path}",
+                "shells": [], "violations": []}
+    if not dwi_path.exists():
+        return {"status": "error", "message": f"DWI file not found: {dwi_path}",
+                "shells": [], "violations": []}
+
+    try:
+        bvals = np.loadtxt(bval_path).flatten()
+    except Exception as exc:
+        return {"status": "error", "message": f"Could not parse bvals file: {exc}",
+                "shells": [], "violations": []}
+
+    img = nib.load(str(dwi_path))
+    data = img.get_fdata()
+    n_vols = data.shape[-1] if data.ndim == 4 else 1
+
+    if len(bvals) != n_vols:
+        return {
+            "status": "error",
+            "message": (f"bvals file has {len(bvals)} entries but the DWI series has "
+                        f"{n_vols} volume(s) -- these must correspond one-to-one. This "
+                        f"mismatch itself usually means the wrong bvals file is being used."),
+            "shells": [], "violations": [],
+        }
+
+    mask = None
+    if mask_path and Path(mask_path).exists():
+        mask = nib.load(str(mask_path)).get_fdata() > 0.5
+
+    shell_id, shell_bvals = _assign_shells(bvals, tol=shell_tol)
+    n_shells = len(shell_bvals)
+
+    shell_means, shell_counts = [], []
+    for s in range(n_shells):
+        vol_idxs = np.where(shell_id == s)[0]
+        vols = data[..., vol_idxs] if data.ndim == 4 else data[..., None]
+        vals = vols[mask] if mask is not None else vols[vols > 0]
+        shell_means.append(float(np.mean(vals)) if vals.size else float("nan"))
+        shell_counts.append(int(len(vol_idxs)))
+
+    order = np.argsort(shell_bvals)
+    sb = shell_bvals[order]
+    sm = np.asarray(shell_means)[order]
+    sc = np.asarray(shell_counts)[order]
+
+    violations = []
+    for i in range(1, len(sb)):
+        if np.isnan(sm[i]) or np.isnan(sm[i - 1]):
+            continue
+        if sm[i] > sm[i - 1] * (1 + pct_tolerance / 100.0):
+            violations.append({
+                "lower_b": float(sb[i - 1]), "lower_mean": float(sm[i - 1]),
+                "higher_b": float(sb[i]), "higher_mean": float(sm[i]),
+            })
+
+    if n_shells <= 1:
+        status = "inconclusive"
+    elif violations:
+        status = "fail"
+    else:
+        status = "pass"
+
+    return {
+        "status": status,
+        "message": "" if n_shells > 1 else "Only one b-value present -- nothing to compare.",
+        "shells": [
+            {"bval": float(b), "mean_signal": float(m), "n_volumes": int(c)}
+            for b, m, c in zip(sb, sm, sc)
+        ],
+        "violations": violations,
+    }
+
+
+def _bval_shell_table(shells):
+    rows = "".join(
+        f"<tr><td>{s['bval']:.0f}</td><td>{s['n_volumes']}</td>"
+        f"<td>{s['mean_signal']:.1f}</td></tr>"
+        for s in shells
+    )
+    return f"""
+    <table class="bval-table">
+      <thead><tr><th>b-value</th><th>N volumes</th><th>Mean signal</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+    """
+
+
+def bval_check_banner(result):
+    """Render the top-of-page bval consistency banner from a
+    bval_consistency_check() result dict."""
+    status = result.get("status")
+
+    if status == "error":
+        return f"""
+        <div class="bval-banner bval-warn">
+          <span class="bval-banner-text">
+            &#9888; Bval consistency check could not run &mdash; {result['message']}
+          </span>
+        </div>
+        """
+
+    if status == "inconclusive":
+        return f"""
+        <div class="bval-banner bval-warn">
+          <span class="bval-banner-text">
+            &#9888; Bval consistency check inconclusive &mdash; {result['message']}
+          </span>
+        </div>
+        """
+
+    table_html = _bval_shell_table(result["shells"])
+
+    if status == "pass":
+        return f"""
+        <div class="bval-banner bval-pass">
+          <span class="bval-banner-text">
+            &#10003; Bval consistency check passed &mdash; mean signal decreases with
+            increasing b-value, as expected.
+          </span>
+          <details><summary>Per-shell signal</summary>{table_html}</details>
+        </div>
+        """
+
+    # fail
+    viol_items = "".join(
+        f"<li>b={v['lower_b']:.0f} (mean signal {v['lower_mean']:.1f}) &rarr; "
+        f"b={v['higher_b']:.0f} (mean signal {v['higher_mean']:.1f}) &mdash; "
+        f"expected a decrease, saw an increase</li>"
+        for v in result["violations"]
+    )
+    return f"""
+    <div class="bval-banner bval-fail">
+      <span class="bval-banner-text">
+        &#10007; Bval consistency check FAILED &mdash; mean signal does not consistently
+        decrease with increasing b-value. This often means the bvals file does not match
+        the acquired DWI series (wrong file, mismatched volume order, wrong scan, etc.).
+      </span>
+      <details open>
+        <summary>Details</summary>
+        <ul class="bval-violation-list">{viol_items}</ul>
+        {table_html}
+      </details>
+    </div>
+    """
 
 # --------------------------------------------------------------------------
 # QC sections
@@ -293,9 +525,16 @@ def _find_qc_image(qc_dir, filename):
     p = Path(qc_dir) / filename
     return p if p.exists() else None
 
-def _img_file_to_base64(path, max_width=1000):
-    optimized = optimize_png_bytes(Path(path).read_bytes(), max_width=max_width)
-    return base64.b64encode(optimized).decode("utf-8")
+def _img_file_to_base64(path, target_width=1000):
+    """
+    Base64-encode an externally-sourced eddy_quad summary PNG, resized to a
+    consistent target width so per-shell images (avg_b0/avg_bX, CNR/SNR
+    maps) all display at the same size regardless of their native
+    resolution -- see normalize_png_bytes for why this differs from the
+    plain-shrink-only optimize_png_bytes used for this script's own figures.
+    """
+    normalized = normalize_png_bytes(Path(path).read_bytes(), target_width=target_width)
+    return base64.b64encode(normalized).decode("utf-8")
 
 def collect_eddyqc_images(qc_dir, bvals, skip_b0_snr=False):
     qc_dir = Path(qc_dir)
@@ -590,7 +829,7 @@ def brainmask_section(nodif_path, mask_path):
 # Response voxels QC
 # --------------------------------------------------------------------------
 
-RESPONSE_TISSUE_LABELS = ["CSF", "GM", "WM"]
+RESPONSE_TISSUE_LABELS = ["WM", "GM", "CSF"]
 RESPONSE_TISSUE_COLORS = ["#4fa3ff", "#ff9f4f", "#e14fff"]
 
 def response_voxels_section(voxels_path, underlay_path, underlay_label="nodif (b0)"):
@@ -1405,8 +1644,7 @@ def disconnected_nodes_block(mat, node_labels=None):
     def node_name(i):
         if node_labels and i < len(node_labels):
             return str(node_labels[i])
-        return str(i)  
-      #  return str(i + 1)  # 1-based to match typical atlas/connectome node numbering
+        return str(i + 1)  # 1-based to match typical atlas/connectome node numbering
 
     stat_class = "stat-ok" if n_disc == 0 else "stat-bad"
     stat_card = f"""
@@ -1445,6 +1683,35 @@ def disconnected_nodes_block(mat, node_labels=None):
     """
 
 
+def _csv_has_header_row(csv_path, delimiter=","):
+    """
+    tck2connectome CSVs are plain numeric matrices with NO header row --
+    every field on every line is a number. Some other connectivity CSVs
+    (e.g. hand-exported ones) do carry a header row of node names/labels.
+    Rather than assuming one way or the other (which silently drops a
+    real data row/column if wrong), inspect the first non-empty line: if
+    every field on it parses as a float, treat it as data; otherwise
+    treat it as a header to skip.
+    """
+    with open(csv_path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                first_line = line
+                break
+        else:
+            return False
+    fields = [x.strip() for x in first_line.split(delimiter) if x.strip() != ""]
+    if not fields:
+        return False
+    for x in fields:
+        try:
+            float(x)
+        except ValueError:
+            return True
+    return False
+
+
 def connectivity_matrix_section(csv_path, atlas_name=None):
     if not csv_path:
         return ""
@@ -1458,15 +1725,18 @@ def connectivity_matrix_section(csv_path, atlas_name=None):
         </section>
         """
 
+    skip = 1 if _csv_has_header_row(csv_path) else 0
     try:
-        raw = np.loadtxt(csv_path, delimiter=",", skiprows=1)
+        raw = np.loadtxt(csv_path, delimiter=",", skiprows=skip)
     except Exception:
-        raw = np.genfromtxt(csv_path, delimiter=",", skip_header=1, filling_values=0)
+        raw = np.genfromtxt(csv_path, delimiter=",", skip_header=skip, filling_values=0)
 
     if raw.ndim != 2:
         raw = np.atleast_2d(raw)
 
     if raw.shape[1] == raw.shape[0] + 1:
+        # Genuine leading label/index column (only trim when the matrix
+        # isn't already square).
         mat = raw[:, 1:]
     else:
         mat = raw
@@ -1838,6 +2108,59 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     left: 0;
     margin-bottom: 0;
   }}
+  .bval-banner {{
+    max-width: 1200px;
+    margin: 1.25rem auto 0;
+    padding: 0.85rem 1.5rem;
+    border-radius: 8px;
+    font-size: 0.92rem;
+  }}
+  .bval-banner-text {{
+    display: block;
+  }}
+  .bval-pass {{
+    background: #16281c;
+    border: 1px solid #2e6b3f;
+    color: #b7e6c2;
+  }}
+  .bval-fail {{
+    background: #2c1a1a;
+    border: 1px solid #a3413a;
+    color: #f3bcb6;
+  }}
+  .bval-warn {{
+    background: #2a2417;
+    border: 1px solid #8a6d2f;
+    color: #e6cf9a;
+  }}
+  .bval-banner details {{
+    margin-top: 0.6rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }}
+  .bval-banner summary {{
+    cursor: pointer;
+    color: inherit;
+  }}
+  .bval-violation-list {{
+    margin: 0.5rem 0;
+    padding-left: 1.2rem;
+  }}
+  .bval-table {{
+    border-collapse: collapse;
+    margin-top: 0.6rem;
+    font-size: 0.82rem;
+  }}
+  .bval-table th, .bval-table td {{
+    padding: 0.3rem 0.7rem;
+    text-align: left;
+    border-bottom: 1px solid #2a2f36;
+    color: var(--text);
+  }}
+  .bval-table th {{
+    color: var(--muted);
+    font-weight: 500;
+  }}
 </style>
 </head>
 <body>
@@ -1845,6 +2168,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
   <span class="brand">DWI QC{subject_suffix}</span>
   {nav_links}
 </nav>
+{top_banner}
 <main>
   {sections}
 </main>
@@ -1852,7 +2176,8 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
-def build_report(sections, output_path, subject=None, extra_nav=None):
+def build_report(sections, output_path, subject=None, extra_nav=None,
+                 top_banner_html=""):
     subject_suffix = f" &mdash; {subject}" if subject else ""
     extra_nav = extra_nav or []
     nav_parts = []
@@ -1864,7 +2189,8 @@ def build_report(sections, output_path, subject=None, extra_nav=None):
     nav_links = "\n  ".join(nav_parts)
     body = "\n".join(html for _, _, html in sections)
     page = PAGE_TEMPLATE.format(subject_suffix=subject_suffix,
-                                nav_links=nav_links, sections=body)
+                                nav_links=nav_links, sections=body,
+                                top_banner=top_banner_html)
     Path(output_path).write_text(page)
 
 def main():
@@ -1921,6 +2247,18 @@ def main():
                     help="tck2connectome CSV connectivity matrix")
     p.add_argument("--connectivity-atlas-name", default=None,
                     help="Atlas label for connectivity section")
+
+    p.add_argument("--bval-check-bvals", default=None,
+                    help="Path to the bvals file to sanity-check against the DWI series")
+    p.add_argument("--bval-check-dwi", default=None,
+                    help="4D DWI volume matching --bval-check-bvals (defaults to "
+                         "--eddy-raw-dwi, then --eddy-preproc-dwi, if not given)")
+    p.add_argument("--bval-check-mask", default=None,
+                    help="Optional brain mask restricting the signal check "
+                         "(defaults to --brainmask-mask if not given)")
+    p.add_argument("--bval-check-pct-tolerance", type=float, default=8.0,
+                    help="Percent a shell's mean signal may exceed the preceding "
+                         "lower-b shell before being flagged (default: 8.0)")
 
     p.add_argument("--output", default="qc_report.html", help="Output HTML path")
     p.add_argument("--subject", default=None, help="Subject label, e.g. sub-01")
@@ -2026,8 +2364,29 @@ def main():
         if 'id="disconnectednodes"' in connectivity_html:
             extra_nav.append(("connectivity", "disconnectednodes", "Disconnected Nodes"))
 
+    top_banner_html = ""
+    if args.bval_check_bvals:
+        dwi_for_check = (args.bval_check_dwi or args.eddy_raw_dwi
+                          or args.eddy_preproc_dwi)
+        mask_for_check = args.bval_check_mask or args.brainmask_mask
+        if dwi_for_check:
+            bval_result = bval_consistency_check(
+                dwi_for_check, args.bval_check_bvals,
+                mask_path=mask_for_check,
+                pct_tolerance=args.bval_check_pct_tolerance,
+            )
+        else:
+            bval_result = {
+                "status": "error",
+                "message": ("No DWI volume available for the bval check -- pass "
+                             "--bval-check-dwi (or --eddy-raw-dwi / --eddy-preproc-dwi)."),
+                "shells": [], "violations": [],
+            }
+        top_banner_html = bval_check_banner(bval_result)
+
     build_report(sections, args.output,
-                 subject=args.subject, extra_nav=extra_nav)
+                 subject=args.subject, extra_nav=extra_nav,
+                 top_banner_html=top_banner_html)
     print(f"Wrote {args.output}")
 
 if __name__ == "__main__":

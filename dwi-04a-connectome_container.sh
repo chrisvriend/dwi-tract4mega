@@ -295,7 +295,7 @@ rm "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}-sift_mask.nii.gz" \
 rsync -rltpD "${subj}${sessionfile}space-dwi_tracto-${nstreamlines}"* \
  *sift* *mu* \
     "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi"
-rsync -rltpD *response* "${outputdir}/dwi-tracto/${subj}${sessionpath}rpf"
+rsync -rltpD *response.txt "${outputdir}/dwi-tracto/${subj}${sessionpath}rpf"
 mrconvert "${subj}${sessionfile}FOD-wm-norm.mif" \
     "${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}tissue-WM-norm_fod.nii.gz"
 

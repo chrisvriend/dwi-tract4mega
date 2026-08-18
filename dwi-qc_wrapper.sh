@@ -79,26 +79,33 @@ build_qc_args() {
     # Define all candidate files and their corresponding flags
     # Format: "flag|full_path"
     local entries=(
+        # bvals check
+        "bval-check-bvals|${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval"
         "noise|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz"
-        "eddy-json|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/qc.json"
-        "eddy-rms|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-preproc.eddy_movement_rms"
-        "eddy-outliers|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-preproc.eddy_outlier_report"
-        "eddy-raw-dwi|${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.nii.gz"
-        "eddy-preproc-dwi|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz"
-        # wildcards for topup
+         # topup
         "topup-before|${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-*_space-dwi_desc-4topup_epi.nii.gz"
         "topup-after|${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-unwarped_epi.nii.gz"
         "topup-acqparams|${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-*_desc-refparams.tsv"
         "topup-fieldmap|${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-topup_fieldmap.nii.gz"
         "topup-dwi-acqparams|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}acq-dwi_desc-acqparams.tsv"
+        # eddy outcomes
+        "eddy-json|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/qc.json"
+        "eddy-rms|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-preproc.eddy_movement_rms"
+        "eddy-outliers|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-preproc.eddy_outlier_report"
+        "eddy-raw-dwi|${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.nii.gz"
+        "eddy-preproc-dwi|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz"
+        "eddy-cnr-maps|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz"
+        # brain masks
         "brainmask-nodif|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz"
         "brainmask-mask|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz"
-        "eddy-cnr-maps|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz"
+        # registraion outputs 
         "reg-t1w-dwi|${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz"
         "reg-nodif|${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz"
         "reg-5ttvis|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_vis.nii.gz"
+        # response voxels
         "response-voxels|${outputdir}/dwi-tracto/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-response_voxels.nii.gz"
         "response-underlay|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
+        # tractography outputs
         "tract-tck|${outputdir}/dwi-tracto/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_tracto-100k.tck"
         "connectivity-matrix|${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-${atlas}_desc-streams_connmatrix.csv"
     )
@@ -132,7 +139,7 @@ build_qc_args() {
     done
 
     # Always append output and subject options (no file checks)
-    qc_args+=( "--output" "${outputdir}/dwi-preproc/${subj}${sessionfile}qc.html" "--subject" "${subj}-${session:-nosession}" )
+    qc_args+=( "--output" "${outputdir}/dwi-preproc/${subj}${sessionfile}qc.html" "--subject" "${subj}-${session:-}" )
 
     # Return via global array
     QC_ARGS=( "${qc_args[@]}" )

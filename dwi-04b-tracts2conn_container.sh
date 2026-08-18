@@ -182,7 +182,7 @@ for diff in FA ndi; do
     fi
 done
 
-for atlas in BNA 300P7N; do
+for atlas in BNA 300P7N 400P7N; do
     if [ ! -f ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz ]; then
         log "$YELLOW" "!!WARNING!! ${atlas} atlas not available"
         continue
@@ -216,6 +216,10 @@ for atlas in BNA 300P7N; do
                     -assignment_radial_search 4 \
                     -nthreads ${nthreads} -force -symmetric
             else
+
+                if [[ ${scalar} == ndi ]]; then
+                    log "$YELLOW" "NDI scalar (NODDI outcome) file not available - skipping"
+                else
                 log "$RED" ""
                 log "$RED" "!ERROR! ${scalar} scalar file does not exist"
                 log "$RED" ""

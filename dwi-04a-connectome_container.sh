@@ -14,7 +14,7 @@ Usage() {
 
     (C) C.Vriend - Amsterdam UMC - Nov 5 2025
     performs tractography
-    Usage: ./dwi-04a_connectome.sh -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> [-z <session>] -x <nstreamlines> -t <nthreads>
+    Usage: ./dwi-04a_connectome_container.sh -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> [-z <session>] -x <nstreamlines> -t <nthreads>
 
 EOF
     exit 1
@@ -41,7 +41,7 @@ workdir=""
 subj=""
 session=""
 nthreads=16
-nstreamlines=50M
+nstreamlines=20M
 # Parse command line arguments
 while getopts ":i:o:w:s:z:t:x:" opt; do
     case $opt in

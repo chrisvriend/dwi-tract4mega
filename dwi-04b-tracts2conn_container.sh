@@ -43,8 +43,8 @@ outputdir=""
 workdir=""
 subj=""
 session=""
-nstreamlines=50M
-nthreads=16
+nstreamlines=20M
+nthreads=4
 
 
 # Parse command line arguments
@@ -55,7 +55,7 @@ while getopts ":i:o:w:s:z:t:x:" opt; do
         w) workdir="$OPTARG" ;;
         s) subj="$OPTARG" ;;
         z) session="$OPTARG" ;;
-         t) nthreads="$OPTARG" ;;
+        t) nthreads="$OPTARG" ;;
         x) nstreamlines="$OPTARG" ;;
         \?) log "$RED" "Invalid option: -$OPTARG"; exit 1 ;;
         :) log "$RED" "Option -$OPTARG requires an argument."; exit 1 ;;
@@ -82,19 +82,49 @@ sessionfile="_${session:+${session}_}"
 ##############
 # CHECK FILES
 ##############
-files=$(echo "
-    ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck
-    ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt
-    ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif")
-for file in ${files}; do
-    if [ ! -f ${file} ]; then
+
+if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck" ]; then
+    rsync -rltpD ${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck \
+        ${workdir}/${subj}${sessionpath}dwi/
+fi
+if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt" ]; then
+    rsync -rltpD ${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}_desc-sift_weights.txt \
+        ${workdir}/${subj}${sessionpath}dwi/
+fi
+if [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif ]] \
+ && [[ -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz ]]; then 
+
+    cd "${workdir}/${subj}${sessionpath}dwi"
+    mrconvert "${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" \
+        -fslgrad "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" \
+        "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" \
+        "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" -force
+    dwibiascorrect ants "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" \
+        "${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif" -nthreads "${threads}" \
+        -bias "${subj}${sessionfile}space-dwi_desc-biasest_dwi.mif" \
+        -scratch "${workdir}/${subj}${sessionpath}tempbiascorrect" -force
+    rm "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif"
+elif [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" ]; then 
+    rsync -rltpD ${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.* \
+        ${workdir}/${subj}${sessionpath}dwi/
+    cd "${workdir}/${subj}${sessionpath}dwi"
+    mrconvert "${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz" \
+        -fslgrad "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" \
+        "${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" \
+        "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" -force
+    dwibiascorrect ants "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif" \
+        "${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif" -nthreads "${threads}" \
+        -bias "${subj}${sessionfile}space-dwi_desc-biasest_dwi.mif" \
+        -scratch "${workdir}/${subj}${sessionpath}tempbiascorrect" -force
+    rm "${subj}${sessionfile}space-dwi_desc-preproc_dwi.mif"
+else 
         log "$RED" "!!!ERROR!!!"
         log "$RED" "A scan was not found in the workdir"
-        log "$RED" "${file}"
-        log "$RED" "Cannot continue without this file"
+        log "$RED" "Cannot continue "
         exit 1
-    fi
-done
+
+fi
+
 
 if [ -f ${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-odi_noddi.nii.gz ]; then
     log "$YELLOW" "Found noddi output in output directory"
@@ -219,6 +249,7 @@ for atlas in BNA 300P7N 400P7N; do
 
                 if [[ ${scalar} == ndi ]]; then
                     log "$YELLOW" "NDI scalar (NODDI outcome) file not available - skipping"
+                    continue
                 else
                 log "$RED" ""
                 log "$RED" "!ERROR! ${scalar} scalar file does not exist"

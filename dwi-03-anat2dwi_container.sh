@@ -639,6 +639,27 @@ log "$BLUE" "-----------------------------------"
 log "$BLUE" "Warp atlases to FreeSurfer output"
 log "$BLUE" "-----------------------------------"
 
+
+# Subject-2-MNI transform for Buckner atlas
+echo
+log "$BLUE" "---Buckner Cerebellum"
+mri_easyreg \
+  --ref ${FREESURFER_HOME}/average/Yeo_JNeurophysiol11_MNI152/FSL_MNI152_FreeSurferConformed_1mm.nii.gz \
+  --flo ${SUBJECTS_DIR}/${subj}/mri/norm.mgz \
+  --ref_reg ${SUBJECTS_DIR}/${subj}/mri/transforms/mni_reg.mgz \
+  --flo_reg ${SUBJECTS_DIR}/${subj}/mri/transforms/subj_reg.mgz \
+  --fwd_field ${SUBJECTS_DIR}/${subj}/mri/transforms/fwd_field.nii.gz \
+  --bak_field ${SUBJECTS_DIR}/${subj}/mri/transforms/bak_field.nii.gz
+mri_easywarp \
+  --i ${FREESURFER_HOME}/average/Buckner_JNeurophysiol11_MNI152/Buckner2011_17Networks_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz \
+  --o ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.nii.gz \
+  --field ${SUBJECTS_DIR}/${subj}/mri/transforms/fwd_field.nii.gz \
+  --nearest
+mri_binarize --i ${SUBJECTS_DIR}/${subj}/mri/aseg.mgz --match 8 47 --o ${subj}/mri/cerebellum_mask.nii.gz
+fslmaths ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.nii.gz -mas ${subj}/mri/cerebellum_mask.nii.gz \
+  ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks_masked.nii.gz
+
+
 # BRAINNETOME ATLAS
 echo
 log "$BLUE" "---BRAINNETOME"
@@ -672,11 +693,12 @@ if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz" ]]; then
     mri_aparc2aseg --threads ${nthreads} --s "${subj}" --annot BN_Atlas --o "${SUBJECTS_DIR}/${subj}/mri/BNA+aseg.mgz"
 fi
 
+
 # Schaefer Atlas
 log "$BLUE" "---Schaefer"
 rsync -rltpDv --ignore-existing "${FREESURFER_HOME}/subjects/fsaverage" "${SUBJECTS_DIR}"
 
-for parcel in 300P7N 400P7N; do
+for parcel in 300P17N 400P17N; do
     log "$BLUE" "Parcellation = ${parcel}"
     case "${parcel}" in
         300P7N) ID="300Parcels_7Networks" ;;
@@ -704,7 +726,7 @@ done
 
 
 # --- Atlas to DWI space ---
-for atlas in BNA 300P7N 400P7N; do
+for atlas in BNA 300P17N 400P17N; do
     if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" ]]; then
         log "$YELLOW" "WARNING! atlas: ${atlas} - not available in FreeSurfer directory of ${subj}"
         continue

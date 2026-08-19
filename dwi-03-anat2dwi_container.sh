@@ -645,20 +645,24 @@ echo
 log "$BLUE" "---Buckner Cerebellum"
 mri_easyreg \
   --ref ${FREESURFER_HOME}/average/Yeo_JNeurophysiol11_MNI152/FSL_MNI152_FreeSurferConformed_1mm.nii.gz \
+  --ref_seg ${SUBJECTS_DIR}/${subj}/mri/mni152_synthseg.nii.gz  \
   --flo ${SUBJECTS_DIR}/${subj}/mri/norm.mgz \
+  --flo_seg  ${SUBJECTS_DIR}/${subj}/mri/synthseg.full.mgz \
   --ref_reg ${SUBJECTS_DIR}/${subj}/mri/transforms/mni_reg.mgz \
   --flo_reg ${SUBJECTS_DIR}/${subj}/mri/transforms/subj_reg.mgz \
-  --fwd_field ${SUBJECTS_DIR}/${subj}/mri/transforms/fwd_field.nii.gz \
-  --bak_field ${SUBJECTS_DIR}/${subj}/mri/transforms/bak_field.nii.gz
+  --fwd_field ${SUBJECTS_DIR}/${subj}/mri/transforms/fwd_field.mgz \
+  --bak_field ${SUBJECTS_DIR}/${subj}/mri/transforms/bak_field.mgz \
+  --threads ${nthreads}
 mri_easywarp \
   --i ${FREESURFER_HOME}/average/Buckner_JNeurophysiol11_MNI152/Buckner2011_17Networks_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz \
-  --o ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.nii.gz \
-  --field ${SUBJECTS_DIR}/${subj}/mri/transforms/fwd_field.nii.gz \
+  --o ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz \
+  --field ${SUBJECTS_DIR}/${subj}/mri/transforms/bak_field.mgz \
   --nearest
-mri_binarize --i ${SUBJECTS_DIR}/${subj}/mri/aseg.mgz --match 8 47 --o ${subj}/mri/cerebellum_mask.nii.gz
-fslmaths ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.nii.gz -mas ${subj}/mri/cerebellum_mask.nii.gz \
-  ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks_masked.nii.gz
+mri_binarize --i ${SUBJECTS_DIR}/${subj}/mri/aseg.mgz --match 8 47 --o ${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.nii.gz
 
+fslmaths ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz -mas ${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.nii.gz \
+  ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz
+rm ${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.nii.gz
 
 # BRAINNETOME ATLAS
 echo
@@ -783,6 +787,49 @@ for atlas in BNA 300P17N 400P17N; do
     rm "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
 
 done
+
+# Buckner atlas
+ if [[ -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
+        mri_convert --in_type mgz --out_type nii \
+            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz" \
+            "${workanat}/${pref}res-FS_atlas-Buckner_temp.nii.gz"
+        mrgrid "${workanat}/${pref}res-FS_atlas-Buckner_temp.nii.gz" \
+            regrid -template "${hybridtemplate}" \
+            -interp nearest \
+            "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" -force
+        fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" "${hybridtemplate}"
+        rm "${workanat}/${pref}res-FS_atlas-Buckner_temp.nii.gz"
+    else
+        mri_convert --in_type mgz --out_type nii \
+            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz" \
+            "${workdir}/${subj}/anat/${subj}_res-FS_atlas-Buckner_temp.nii.gz"
+        mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_atlas-Buckner_temp.nii.gz" \
+            -linear "${workxfms}/${pref}desc-mrtrix_T1w-2-dwi.txt" \
+            -template "${hybridtemplate}" \
+            -interp nearest \
+            "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" -force
+        fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" "${hybridtemplate}"
+        rm "${workdir}/${subj}/anat/${subj}_res-FS_atlas-Buckner_temp.nii.gz"
+
+  fi
+
+# to fix
+  
+  Nnodes=414
+  awk -v c="$Nnodes" -v OFS='\t' '{ $1 = $1 + c; print }' "${atlasdir}/Buckner/Buckner_17Networks_orig.txt" > ${workanat}/Buckner_17Networks_mod.txt
+
+ labelconvert "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" \
+        "${atlasdir}/Buckner/Buckner_17Networks_orig.txt" \
+        "${workanat}/Buckner_17Networks_mod.txt" \
+        "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" -force
+ fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" "${hybridtemplate}"
+
+# add Buckner to 400P17N
+fslmaths ${workanat}/${pref}space-dwi_res-high_atlas-400P17N_dseg.nii.gz \
+ -add "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" \
+  "${workanat}/${pref}space-dwi_res-high_atlas-400P17N-Buckner_dseg.nii.gz"
+
+
 
 # Transfer files
 rsync -rltpDv ${workanat}/${pref}space-dwi_res-high_atlas* \

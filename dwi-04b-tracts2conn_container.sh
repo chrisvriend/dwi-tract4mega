@@ -212,7 +212,7 @@ for diff in FA ndi; do
     fi
 done
 
-for atlas in BNA 300P7N 400P7N; do
+for atlas in BNA 300P7N 400P17N 400P17N-Buckner; do
     if [ ! -f ${workdir}/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz ]; then
         log "$YELLOW" "!!WARNING!! ${atlas} atlas not available"
         continue

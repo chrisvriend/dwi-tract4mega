@@ -52,20 +52,17 @@ run_03_and_02b() {
   local session_flag="${1:-}"
 
   # determine nthreads
-  if (( nthreads >= 8 )); then
-    eddy_threads=4
-    anat2dwi_threads=4
+  if (( nthreads < 2 )); then
+    log "$RED" "Error: At least 2 threads are required to run the processes."
+    exit 1
   elif (( nthreads > 4 )); then
     eddy_threads=4
     anat2dwi_threads=$((nthreads - 4))
-  elif (( nthreads < 2 )); then
-    log "$RED" "Error: At least 2 threads are required to run the processes."
-    exit 1
   else
-    eddy_threads=$nthreads
+    eddy_threads=$((nthreads - 1))
     anat2dwi_threads=1
   fi
-
+  
   ${scriptdir}/dwi-03-anat2dwi_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -f "${freesurferdir}" -t "${anat2dwi_threads}" ${session_flag} > "${outputdir}/dwi-preproc/${subj}/log/${subj}_anat2dwi_$(date +"%Y-%m-%d_%H-%M").log" 2>&1 &
   pid1=$!
   ${scriptdir}/dwi-02b-eddyCPU_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -m "${eddy_method}" -t "${eddy_threads}" ${session_flag} > "${outputdir}/dwi-preproc/${subj}/log/${subj}_eddy_$(date +"%Y-%m-%d_%H-%M").log" 2>&1 &

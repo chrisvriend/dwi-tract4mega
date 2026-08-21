@@ -17,12 +17,13 @@
 
 set -euo pipefail
 
+
 # usage instructions
 Usage() {
     cat <<EOF
 (C) C.Vriend - 9/7/2025 - dwi-02b-eddy.sh
 
-Usage: ./dwi-02b-eddyCPU_container.sh -i <bidsdir> -o <outputdir> -w <workdir> -s <subj> [-z <session>] -m <method> -t <nthreads>
+Usage: ./dwi-02b-eddyCPU_container.sh -i <bidsdir> -o <outputdir> -c <scriptdir> -w <workdir> -s <subj> [-z <session>] -m <method> -t <nthreads>
 EOF
     exit 1
 }
@@ -56,10 +57,11 @@ method=""
 nthreads=""
 
 # Parse command line arguments
-while getopts ":i:o:w:s:z:m:t:" opt; do
+while getopts ":i:o:c:w:s:z:m:t:" opt; do
     case $opt in
     i) bidsdir="$OPTARG" ;;
     o) outputdir="$OPTARG" ;;
+    c) scriptdir="$OPTARG" ;;
     w) workdir="$OPTARG" ;;
     s) subj="$OPTARG" ;;
     z) session="$OPTARG" ;;
@@ -71,7 +73,7 @@ while getopts ":i:o:w:s:z:m:t:" opt; do
 done
 
 missing=0
-for var in bidsdir outputdir workdir subj method nthreads; do
+for var in bidsdir outputdir workdir scriptdir subj method nthreads; do
     if [[ -z "${!var}" ]]; then
         log "$RED" "Error: $var is required."
         missing=1

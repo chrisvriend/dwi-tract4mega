@@ -65,7 +65,7 @@ run_03_and_02b() {
   
   ${scriptdir}/dwi-03-anat2dwi_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -f "${freesurferdir}" -t "${anat2dwi_threads}" ${session_flag} > "${outputdir}/dwi-preproc/${subj}/log/${subj}_anat2dwi_$(date +"%Y-%m-%d_%H-%M").log" 2>&1 &
   pid1=$!
-  ${scriptdir}/dwi-02b-eddyCPU_container.sh -i "${bidsdir}" -o "${outputdir}" -w "${workdir}" -s "${subj}" -m "${eddy_method}" -t "${eddy_threads}" ${session_flag} > "${outputdir}/dwi-preproc/${subj}/log/${subj}_eddy_$(date +"%Y-%m-%d_%H-%M").log" 2>&1 &
+  ${scriptdir}/dwi-02b-eddyCPU_container.sh -i "${bidsdir}" -o "${outputdir}" -c "${scriptdir}" -w "${workdir}" -s "${subj}" -m "${eddy_method}" -t "${eddy_threads}" ${session_flag} > "${outputdir}/dwi-preproc/${subj}/log/${subj}_eddy_$(date +"%Y-%m-%d_%H-%M").log" 2>&1 &
   pid2=$!
 
   wait $pid1

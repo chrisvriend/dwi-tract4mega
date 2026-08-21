@@ -643,20 +643,25 @@ log "$BLUE" "-----------------------------------"
     if [[ ${Buckner} -eq 1 ]]; then
     log "$BLUE" "Buckner Cerebellum"
 
+
     mni_t1="${FREESURFER_HOME}/average/Yeo_JNeurophysiol11_MNI152/FSL_MNI152_FreeSurferConformed_1mm.nii.gz"
     buckner_atlas="${FREESURFER_HOME}/average/Buckner_JNeurophysiol11_MNI152/Buckner2011_17Networks_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz"
     xfm_dir="${SUBJECTS_DIR}/${subj}/mri/transforms"
-    mkdir -p "${xfm_dir}"
+
+    if [ ! -f "${xfm_dir}/mni_to_subj.m3z" ]; then
+    
+    log "$BLUE" "Register Buckner atlas to individual FreeSurfer space"
 
     # --- Step 1: nonlinear registration, MNI template -> subject norm.mgz ---
     # moving = mni_t1, fixed = subject. This way the warp already maps
     # MNI-space volumes (like the Buckner atlas) into subject space,
     # so no inversion is needed later.
-    mri_synthmorph register -m deform \
+    mri_synthmorph register -m joint \
         -o "${xfm_dir}/mni_in_subj_QC.mgz" \
         -t "${xfm_dir}/mni_to_subj_warp.mgz" \
         "${mni_t1}" \
-        "${SUBJECTS_DIR}/${subj}/mri/norm.mgz"
+        "${SUBJECTS_DIR}/${subj}/mri/norm.mgz" \
+        -j "${nthreads}"
 
     # --- Step 2 (optional QC): eyeball the registration before trusting it ---
     # freeview -v ${SUBJECTS_DIR}/${subj}/mri/norm.mgz \
@@ -672,8 +677,10 @@ log "$BLUE" "-----------------------------------"
         --inras "${xfm_dir}/mni_to_subj_warp.mgz" \
         --outm3z "${xfm_dir}/mni_to_subj.m3z"
 
+    fi
     # --- Step 4: apply the warp to the Buckner atlas (nearest-neighbor, it's a label map) ---
     mri_vol2vol --mov "${buckner_atlas}" \
+        --targ "${SUBJECTS_DIR}/${subj}/mri/norm.mgz" \
         --m3z "${xfm_dir}/mni_to_subj.m3z" \
         --noDefM3zPath \
         --interp nearest \

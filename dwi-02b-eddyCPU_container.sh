@@ -171,6 +171,25 @@ else
     STavail=0
 fi
 
+
+# run detect whole / half sphere sampling
+sampling=$(python ${scriptdir}/helpers/detect_sphere_sampling.py \
+    "${DWIbvecs}")
+
+if [[ "$sampling" == "HALF_SPHERE" ]]; then
+    log "$YELLOW" "Detected half-sphere sampling"
+    log "$YELLOW" "Setting eddy method to slmlinear"
+    method="slmlinear"
+elif [[ "$sampling" == "WHOLE_SPHERE" ]]; then
+    log "$YELLOW" "Detected whole-sphere sampling"
+    log "$YELLOW" "leaving eddy method as ${method}"
+else
+    log "$RED" "Could not detect sampling scheme from bvecs"
+    log "$RED" "Please check your bvecs file: ${DWIbvecs}"
+    exit 1
+fi
+
+
 case "$method" in
 default)
     eddy diffusion \
@@ -216,7 +235,28 @@ slmlinear)
         -b "${DWIbvals}" \
         -f "${topup}_fieldmap.nii.gz"
     ;;
+slmquadratic)
+    eddy diffusion \
+        --imain="${DWImain}" \
+        --mask="${DWImask}" \
+        --acqp="${DWIacqp}" \
+        --index=index.txt \
+        --bvecs="${DWIbvecs}" \
+        --bvals="${DWIbvals}" \
+        --out="${DWIout}" \
+        --topup="${topup}" \
+        --repol --cnr_maps \
+        --slm=quadratic \
+        --verbose \
+        --nthr=${nthreads} >"${basedir}/eddy.log"
 
+    run_qc "${DWIout}" \
+        -idx index.txt \
+        -par "${DWIacqp}" \
+        -m "${DWImask}" \
+        -b "${DWIbvals}" \
+        -f "${topup}_fieldmap.nii.gz"
+    ;;
 volcorr | volcorrnosdc)
     if ((STavail == 1)); then
         eddy_args=(

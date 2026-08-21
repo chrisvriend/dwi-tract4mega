@@ -16,6 +16,7 @@ export ARTHOME=/opt/art
 nthreads=${nthreads:-4} # default to 4 thread if not set, can be overridden by env variable when running container
 lowmem=${lowmem:-0} # default is to run in high memory mode, set to 1 to run in low memory mode (e.g. on cluster with low mem nodes or local machine)
 subfields=${subfields:-1} # default is to run subfield segmentation, set to 0 to skip
+Buckner=${Buckner:-1} # default is to include Buckner networks, set to 0 to skip
 
 # Color variables
 RED='\033[0;31m'
@@ -639,30 +640,57 @@ log "$BLUE" "-----------------------------------"
 log "$BLUE" "Warp atlases to FreeSurfer output"
 log "$BLUE" "-----------------------------------"
 
+    if [[ ${Buckner} -eq 1 ]]; then
+    log "$BLUE" "Buckner Cerebellum"
 
-# Subject-2-MNI transform for Buckner atlas
-echo
-log "$BLUE" "---Buckner Cerebellum"
-mri_easyreg \
-  --ref ${FREESURFER_HOME}/average/Yeo_JNeurophysiol11_MNI152/FSL_MNI152_FreeSurferConformed_1mm.nii.gz \
-  --ref_seg ${SUBJECTS_DIR}/${subj}/mri/mni152_synthseg.nii.gz  \
-  --flo ${SUBJECTS_DIR}/${subj}/mri/norm.mgz \
-  --flo_seg  ${SUBJECTS_DIR}/${subj}/mri/synthseg.full.mgz \
-  --ref_reg ${SUBJECTS_DIR}/${subj}/mri/transforms/mni_reg.mgz \
-  --flo_reg ${SUBJECTS_DIR}/${subj}/mri/transforms/subj_reg.mgz \
-  --fwd_field ${SUBJECTS_DIR}/${subj}/mri/transforms/fwd_field.mgz \
-  --bak_field ${SUBJECTS_DIR}/${subj}/mri/transforms/bak_field.mgz \
-  --threads ${nthreads}
-mri_easywarp \
-  --i ${FREESURFER_HOME}/average/Buckner_JNeurophysiol11_MNI152/Buckner2011_17Networks_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz \
-  --o ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz \
-  --field ${SUBJECTS_DIR}/${subj}/mri/transforms/bak_field.mgz \
-  --nearest
-mri_binarize --i ${SUBJECTS_DIR}/${subj}/mri/aseg.mgz --match 8 47 --o ${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.nii.gz
+    mni_t1="${FREESURFER_HOME}/average/Yeo_JNeurophysiol11_MNI152/FSL_MNI152_FreeSurferConformed_1mm.nii.gz"
+    buckner_atlas="${FREESURFER_HOME}/average/Buckner_JNeurophysiol11_MNI152/Buckner2011_17Networks_MNI152_FreeSurferConformed1mm_LooseMask.nii.gz"
+    xfm_dir="${SUBJECTS_DIR}/${subj}/mri/transforms"
+    mkdir -p "${xfm_dir}"
 
-fslmaths ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz -mas ${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.nii.gz \
-  ${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz
-rm ${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.nii.gz
+    # --- Step 1: nonlinear registration, MNI template -> subject norm.mgz ---
+    # moving = mni_t1, fixed = subject. This way the warp already maps
+    # MNI-space volumes (like the Buckner atlas) into subject space,
+    # so no inversion is needed later.
+    mri_synthmorph register -m deform \
+        -o "${xfm_dir}/mni_in_subj_QC.mgz" \
+        -t "${xfm_dir}/mni_to_subj_warp.mgz" \
+        "${mni_t1}" \
+        "${SUBJECTS_DIR}/${subj}/mri/norm.mgz"
+
+    # --- Step 2 (optional QC): eyeball the registration before trusting it ---
+    # freeview -v ${SUBJECTS_DIR}/${subj}/mri/norm.mgz \
+    #     ${xfm_dir}/mni_in_subj_QC.mgz:colormap=heat:opacity=0.5
+
+    # --- Step 3: convert the SynthMorph warp to FreeSurfer .m3z ---
+    # -g gives the source geometry (the moving image, i.e. mni_t1).
+    # Confirm --inras is correct for your build: run
+    #   mri_warp_convert --help
+    # and check mri_info on mni_to_subj_warp.mgz (RAS-oriented deformation
+    # field vs FS-native warp) before trusting this blindly.
+    mri_warp_convert -g "${mni_t1}" \
+        --inras "${xfm_dir}/mni_to_subj_warp.mgz" \
+        --outm3z "${xfm_dir}/mni_to_subj.m3z"
+
+    # --- Step 4: apply the warp to the Buckner atlas (nearest-neighbor, it's a label map) ---
+    mri_vol2vol --mov "${buckner_atlas}" \
+        --m3z "${xfm_dir}/mni_to_subj.m3z" \
+        --noDefM3zPath \
+        --interp nearest \
+        --o "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz"
+
+    # --- Step 5: restrict to cerebellum (aseg 8 = L-Cerebellum-Cortex, 47 = R-Cerebellum-Cortex) ---
+    mri_binarize --i "${SUBJECTS_DIR}/${subj}/mri/aseg.mgz" \
+        --match 8 47 \
+        --o "${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.mgz"
+
+    mri_mask "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz" \
+        "${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.mgz" \
+        "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz"
+
+    rm -f "${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.mgz" \
+          "${xfm_dir}/mni_in_subj_QC.mgz"
+fi
 
 # BRAINNETOME ATLAS
 echo
@@ -730,104 +758,91 @@ done
 
 
 # --- Atlas to DWI space ---
+# --- helper: convert FreeSurfer mgz -> DWI space, nearest-neighbor ---
+convert_to_dwi_space () {
+    local src_mgz="$1"
+    local out_dseg_temp="$2"   # e.g. ${workanat}/${pref}space-dwi_res-high_atlas-${label}_temp.nii.gz
+    local label="$3"
+
+    local tmp_conv
+    if [[ -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
+        tmp_conv="${workanat}/${pref}res-FS_atlas-${label}_temp.nii.gz"
+        mri_convert --in_type mgz --out_type nii --out_orientation RAS \
+            "${src_mgz}" "${tmp_conv}"
+        mrgrid "${tmp_conv}" regrid -template "${hybridtemplate}" \
+            -interp nearest "${out_dseg_temp}" -force
+    else
+        tmp_conv="${workdir}/${subj}/anat/${subj}_res-FS_atlas-${label}_temp.nii.gz"
+        mri_convert --in_type mgz --out_type nii --out_orientation RAS \
+            "${src_mgz}" "${tmp_conv}"
+        mrtransform "${tmp_conv}" \
+            -linear "${workxfms}/${pref}desc-mrtrix_T1w-2-dwi.txt" \
+            -template "${hybridtemplate}" -interp nearest \
+            "${out_dseg_temp}" -force
+    fi
+    fix_strides "${out_dseg_temp}" "${hybridtemplate}"
+    rm -f "${tmp_conv}"
+}
+
+declare -A atlas_id_map=(
+    [aparc500]="aparc500_labels"
+    [BNA]="BNA_labels"
+    ["BNA+cerebellum"]="BNA+CER_labels"
+)
+
 for atlas in BNA 300P17N 400P17N; do
-    if [[ ! -f "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" ]]; then
+    src_mgz="${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz"
+    if [[ ! -f "${src_mgz}" ]]; then
         log "$YELLOW" "WARNING! atlas: ${atlas} - not available in FreeSurfer directory of ${subj}"
         continue
     fi
 
-    # Declare atlas Ids
     if [[ "${atlas}" =~ ^(100P7N|200P7N|300P7N|300P17N|400P7N|400P17N)$ ]]; then
         ID="Schaefer_${atlas}"
-    else
-        declare -A map=(
-            [aparc500]="aparc500_labels"
-            [BNA]="BNA_labels"
-            ["BNA+cerebellum"]="BNA+CER_labels"
-        )
-        ID="${map[$atlas]}"
-        [[ -z "${ID}" ]] && { log "$RED" "Atlas not found!"; exit 1; }
-    fi
-
-    if [[ -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
-        mri_convert --in_type mgz --out_type nii \
-            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-            "${workanat}/${pref}res-FS_atlas-${atlas}_temp.nii.gz"
-        mrgrid "${workanat}/${pref}res-FS_atlas-${atlas}_temp.nii.gz" \
-            regrid -template "${hybridtemplate}" \
-            -interp nearest \
-            "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" -force
-        fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" "${hybridtemplate}"
-        rm "${workanat}/${pref}res-FS_atlas-${atlas}_temp.nii.gz"
-    else
-        mri_convert --in_type mgz --out_type nii \
-            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/${atlas}+aseg.mgz" \
-            "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz"
-        mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz" \
-            -linear "${workxfms}/${pref}desc-mrtrix_T1w-2-dwi.txt" \
-            -template "${hybridtemplate}" \
-            -interp nearest \
-            "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" -force
-        fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" "${hybridtemplate}"
-        rm "${workdir}/${subj}/anat/${subj}_res-FS_atlas-${atlas}_temp.nii.gz"
-    fi
-
-    if [[ "${ID}" != *"Schaefer"* ]]; then
-        atlaspath="${atlasdir}/${atlas}"
-    else
         atlaspath="${atlasdir}/Schaefer"
+    else
+        ID="${atlas_id_map[$atlas]}"
+        [[ -z "${ID}" ]] && { log "$RED" "Atlas not found!"; exit 1; }
+        atlaspath="${atlasdir}/${atlas}"
     fi
 
-    labelconvert "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_temp.nii.gz" \
+    temp_out="${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
+    convert_to_dwi_space "${src_mgz}" "${temp_out}" "${atlas}"
+
+    labelconvert "${temp_out}" \
         "${atlaspath}/${ID}_orig.txt" \
         "${atlaspath}/${ID}_modified.txt" \
         "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" -force
     fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_dseg.nii.gz" "${hybridtemplate}"
 
-    rm "${workanat}/${pref}space-dwi_res-high_atlas-${atlas}_temp.nii.gz"
-
+    rm -f "${temp_out}"
 done
 
-# Buckner atlas
- if [[ -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
-        mri_convert --in_type mgz --out_type nii \
-            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz" \
-            "${workanat}/${pref}res-FS_atlas-Buckner_temp.nii.gz"
-        mrgrid "${workanat}/${pref}res-FS_atlas-Buckner_temp.nii.gz" \
-            regrid -template "${hybridtemplate}" \
-            -interp nearest \
-            "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" -force
-        fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" "${hybridtemplate}"
-        rm "${workanat}/${pref}res-FS_atlas-Buckner_temp.nii.gz"
-    else
-        mri_convert --in_type mgz --out_type nii \
-            --out_orientation RAS "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz" \
-            "${workdir}/${subj}/anat/${subj}_res-FS_atlas-Buckner_temp.nii.gz"
-        mrtransform "${workdir}/${subj}/anat/${subj}_res-FS_atlas-Buckner_temp.nii.gz" \
-            -linear "${workxfms}/${pref}desc-mrtrix_T1w-2-dwi.txt" \
-            -template "${hybridtemplate}" \
-            -interp nearest \
-            "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" -force
-        fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" "${hybridtemplate}"
-        rm "${workdir}/${subj}/anat/${subj}_res-FS_atlas-Buckner_temp.nii.gz"
+# --- Buckner atlas (reuses the same helper) ---
+buckner_temp="${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz"
+convert_to_dwi_space "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz" \
+    "${buckner_temp}" "Buckner"
 
-  fi
+# Offset Buckner label IDs to avoid collision with 400P17N node IDs.
+# Computed dynamically instead of hardcoded, so it stays correct if the
+# parcellation's max node count ever changes.
+Nnodes=$(awk 'BEGIN{m=0} $1+0>m{m=$1} END{print m}' \
+    "${atlasdir}/Schaefer/Schaefer_400P17N_orig.txt")
+awk -v c="$Nnodes" -v OFS='\t' '{ $1 = $1 + c; print }' \
+    "${atlasdir}/Buckner/Buckner_17Networks_orig.txt" \
+    > "${workanat}/Buckner_17Networks_mod.txt"
 
-# to fix
-  
-  Nnodes=414
-  awk -v c="$Nnodes" -v OFS='\t' '{ $1 = $1 + c; print }' "${atlasdir}/Buckner/Buckner_17Networks_orig.txt" > ${workanat}/Buckner_17Networks_mod.txt
+labelconvert "${buckner_temp}" \
+    "${atlasdir}/Buckner/Buckner_17Networks_orig.txt" \
+    "${workanat}/Buckner_17Networks_mod.txt" \
+    "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" -force
+fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" "${hybridtemplate}"
+rm -f "${buckner_temp}"
 
- labelconvert "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_temp.nii.gz" \
-        "${atlasdir}/Buckner/Buckner_17Networks_orig.txt" \
-        "${workanat}/Buckner_17Networks_mod.txt" \
-        "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" -force
- fix_strides "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" "${hybridtemplate}"
-
-# add Buckner to 400P17N
-fslmaths ${workanat}/${pref}space-dwi_res-high_atlas-400P17N_dseg.nii.gz \
- -add "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" \
-  "${workanat}/${pref}space-dwi_res-high_atlas-400P17N-Buckner_dseg.nii.gz"
+# --- merge Buckner into 400P17N ---
+fslmaths "${workanat}/${pref}space-dwi_res-high_atlas-400P17N_dseg.nii.gz" \
+    -add "${workanat}/${pref}space-dwi_res-high_atlas-Buckner_dseg.nii.gz" \
+    "${workanat}/${pref}space-dwi_res-high_atlas-400P17N-Buckner_dseg.nii.gz"
 
 
 

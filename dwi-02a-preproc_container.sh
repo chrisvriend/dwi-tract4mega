@@ -333,10 +333,10 @@ if [[ "$multirun" == true ]]; then
     # sanity check: all runs must be on the same voxel grid, or fslmerge/
     # dwicat will error (or silently misbehave) further down the pipeline
     ref_size=$(mrinfo -size "${run_mif[0]}" | awk '{print $1, $2, $3}')
-    ref_vox=$(mrinfo -vox "${run_mif[0]}" | awk '{printf "%.3f %.3f %.3f", $1, $2, $3}')
+    ref_vox=$(mrinfo -spacing "${run_mif[0]}" | awk '{printf "%.3f %.3f %.3f", $1, $2, $3}')
     for i in "${!run_labels[@]}"; do
         this_size=$(mrinfo -size "${run_mif[$i]}" | awk '{print $1, $2, $3}')
-        this_vox=$(mrinfo -vox "${run_mif[$i]}" | awk '{printf "%.3f %.3f %.3f", $1, $2, $3}')
+        this_vox=$(mrinfo -spacing "${run_mif[$i]}" | awk '{printf "%.3f %.3f %.3f", $1, $2, $3}')
         if [[ "$this_size" != "$ref_size" ]]; then
             log "${RED}" "run dir-${run_labels[$i]} has matrix size (${this_size}) that does not match dir-${run_labels[0]} (${ref_size})"
             exit 1

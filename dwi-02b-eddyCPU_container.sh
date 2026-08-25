@@ -178,10 +178,8 @@ fi
 # run detect whole / half sphere sampling
 log "$BLUE" "infering sphere sampling scheme from bvecs"
 
-set +e
-sampling=$("${scriptdir}/helpers/detect_sphere_sampling.py" "${DWIbvecs}" 2>"${basedir}/detect_sphere_sampling.err")
-rc=$?
-set -e
+sampling=$(python "${scriptdir}/helpers/detect_sphere_sampling.py" "${DWIbvecs}" 2>"${basedir}/detect_sphere_sampling.err") \
+    || { log "$RED" "detect_sphere_sampling.py failed:"; cat "${basedir}/detect_sphere_sampling.err" >&2; exit 1; }
 
 if [[ $rc -ne 0 ]]; then
     log "$RED" "detect_sphere_sampling.py exited with code ${rc}"

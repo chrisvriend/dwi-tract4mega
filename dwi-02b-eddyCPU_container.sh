@@ -362,9 +362,12 @@ if [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}
     [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec" ] &&
     [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bval" ] &&
     [ -f "${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz" ]; then
-    rm ${workdir}/${subj}${sessionpath}dwi/*desc-preproc*
-    rm "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*meanb0* \
+    shopt -s nullglob
+    rm -f ${workdir}/${subj}${sessionpath}dwi/*desc-preproc*
+    rm -f "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*meanb0* \
         "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"*dns+degibbs*
+    shopt -u nullglob
+    
     log "$GREEN" "FINISHED preprocessing ${subj}${sessionpath}"
 else
     log "$RED" "ERROR! not all output was created successfully"

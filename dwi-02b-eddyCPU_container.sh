@@ -178,8 +178,17 @@ fi
 # run detect whole / half sphere sampling
 log "$BLUE" "infering sphere sampling scheme from bvecs"
 
-sampling=$(python ${scriptdir}/helpers/detect_sphere_sampling.py \
-    "${DWIbvecs}")
+set +e
+sampling=$("${scriptdir}/helpers/detect_sphere_sampling.py" "${DWIbvecs}" 2>"${basedir}/detect_sphere_sampling.err")
+rc=$?
+set -e
+
+if [[ $rc -ne 0 ]]; then
+    log "$RED" "detect_sphere_sampling.py exited with code ${rc}"
+    log "$RED" "stderr:"
+    cat "${basedir}/detect_sphere_sampling.err" >&2
+    exit 1
+fi
 
 if [[ "$sampling" == "HALF_SPHERE" ]]; then
     log "$YELLOW" "Detected half-sphere sampling"

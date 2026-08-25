@@ -4,6 +4,7 @@
 # SLURM DIRECTIVES
 ########################
 
+#SBATCH --begin=2026-08-22T10:00:00
 #SBATCH --job-name=dwipipeline
 #SBATCH --partition=defq
 #SBATCH --cpus-per-task=1
@@ -12,7 +13,7 @@
 #SBATCH --time=00:10:00
 #SBATCH --nice=2000
 #SBATCH --output=%x_%A_%a.log
-#SBATCH --array=2-3%3
+#SBATCH --array=1-1%1
 # NOTE: --array above is a fallback only. In practice this script is
 # submitted via submit_pipeline.sh, which passes --array=1-N%throttle
 # on the sbatch command line, and command-line flags override this.
@@ -21,7 +22,7 @@ set -euo pipefail
 
 ml apptainer
 templatejson=$1
-containerpath=/net/beegfs/users/P042819/TractoFriend.sif
+containerpath=/net/beegfs/users/P042819/tractoprep-v1.0.5.sif
 #hostworkdir=/scratch/users/P042819/work
 
 #export FSLOUTPUTTYPE=NIFTI_GZ
@@ -63,7 +64,6 @@ done
 mkdir -p ${workdir} ${outputdir}
 
 
-
 cd ${bidsdir}
 
 # FIX: build a proper bash array of subject dirs instead of piping
@@ -82,17 +82,18 @@ jq --arg subj "$subj" '.subj = $subj' ${templatejson} > "spec_${subj}.json"
 subjspecjson="spec_${subj}.json"
 
 echo "Submitting preprocessing and tracto jobs for ${subj} ${session:-}..."
+
+
 sessionpath="/${session:+${session}/}"
 sessionfile="_${session:+${session}_}"
 
 logdir="${outputdir}/logs/${subj}${sessionpath}"
-tmpdir="${workdir}/${subj}${sessionpath}tmp"
-mkdir -p "${logdir}" "${tmpdir}"
+#tmpdir="${SLURM_TMPDIR:-${workdir}/${subj}${sessionpath}tmp}/${subj}${sessionpath}tmp"
 
+mkdir -p "${logdir}"
 
 # define bind folders for apptainer 
-bindcmd="${bidsdir},${workdir},${outputdir},${tmpdir}:/scratch"
-
+bindcmd="${bidsdir}:${bidsdir},${workdir}:${workdir},${outputdir}:${outputdir}"
 
 # ============================================================
 # Expected output files (used for skip-logic)
@@ -104,7 +105,7 @@ preproc_anat="${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessio
 preproc_atlas="${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-300P7N_dseg.nii.gz"
 
 tracto_file="${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck"
-conn_file="${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-300P7N_desc-streams_connmatrix.csv"
+conn_file="${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-400P7N_desc-streams_connmatrix.csv"
 
 # ============================================================
 # Helper: submit a job, optionally depending on a previous job
@@ -139,10 +140,20 @@ submit_job () {
         --wrap="${cmd}"
 }
 
+
+# escape $ so it's evaluated when the CHILD job runs, not now
+cmd_preproc="tmpdir_job=\"\${SLURM_TMPDIR:-${workdir}/tmp}/${subj}${sessionfile}\${SLURM_JOB_ID}\"; \
+mkdir -p \"\${tmpdir_job}\"; \
+apptainer run --cleanenv \
+  --bind ${bidsdir}:${bidsdir},${workdir}:${workdir},${outputdir}:${outputdir},\${tmpdir_job}:/scratch \
+  --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch \
+  ${containerpath} dwi-preproc ${subjspecjson}"
+
+
 # Per-stage resource settings
 PREPROC_CPUS=8;   PREPROC_MEM=28G; PREPROC_TIME=07:00:00
-TRACTO_CPUS=16;   TRACTO_MEM=12G;   TRACTO_TIME=04:00:00
-QC_CPUS=1;        QC_MEM=2G;       QC_TIME=00:30:00
+TRACTO_CPUS=16;   TRACTO_MEM=4G;   TRACTO_TIME=04:00:00
+QC_CPUS=1;        QC_MEM=4G;       QC_TIME=00:10:00
 
 last_job=""
 
@@ -153,7 +164,15 @@ if [ -f "${preproc_nifti}" ] && [ -f "${preproc_bvec}" ] && [ -f "${preproc_qc}"
     echo "Preprocessing already done for ${subj} ${session:-}, skipping preproc job."
     job_id_preproc=""
 else
-    cmd_preproc="apptainer run --cleanenv --bind ${bindcmd} --env TMPDIR=${tmpdir} --env TMP=${tmpdir} --env TEMP=${tmpdir} ${containerpath} dwi-preproc ${subjspecjson}"
+    # escape $ so it's evaluated when the CHILD job runs, not now
+    cmd_preproc="tmpdir_job=\"\${SLURM_TMPDIR:-${workdir}/tmp}/${subj}${sessionfile}\${SLURM_JOB_ID}\"; \
+    mkdir -p \"\${tmpdir_job}\"; \
+    apptainer run --cleanenv \
+      --bind ${bidsdir}:${bidsdir},${workdir}:${workdir},${outputdir}:${outputdir},\${tmpdir_job}:/scratch \
+      --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch \
+      ${containerpath} dwi-preproc ${subjspecjson}"
+    #cmd_preproc="apptainer run --cleanenv --bind ${bindcmd} --env TMPDIR=${tmpdir} --env TMP=${tmpdir} --env TEMP=${tmpdir} ${containerpath} dwi-preproc ${subjspecjson}"
+
     job_id_preproc=$(submit_job "dwi-preproc_${subj}${sessionfile}" "${cmd_preproc}" "${last_job}" "${PREPROC_CPUS}" "${PREPROC_MEM}" "${PREPROC_TIME}")
     echo "Submitted dwi-preproc job: ${job_id_preproc}"
     last_job="${job_id_preproc}"
@@ -166,7 +185,14 @@ if [ -f "${tracto_file}" ] && [ -f "${conn_file}" ]; then
     echo "Tractography already done for ${subj} ${session:-}, skipping tracto job."
     job_id_tracto=""
 else
-   cmd_tracto="apptainer run --cleanenv --bind ${bindcmd} --env TMPDIR=${tmpdir} --env TMP=${tmpdir} --env TEMP=${tmpdir} ${containerpath} dwi-tracto ${subjspecjson}"
+    # escape $ so it's evaluated when the CHILD job runs, not now
+  cmd_tracto="tmpdir_job=\"\${SLURM_TMPDIR:-${workdir}/tmp}/${subj}${sessionfile}\${SLURM_JOB_ID}\"; \
+  mkdir -p \"\${tmpdir_job}\"; \
+  apptainer run --cleanenv \
+    --bind ${bidsdir}:${bidsdir},${workdir}:${workdir},${outputdir}:${outputdir},\${tmpdir_job}:/scratch \
+    --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch \
+    ${containerpath} dwi-tracto ${subjspecjson}"
+  # cmd_tracto="apptainer run --cleanenv --bind ${bindcmd} --env TMPDIR=${tmpdir} --env TMP=${tmpdir} --env TEMP=${tmpdir} ${containerpath} dwi-tracto ${subjspecjson}"
     job_id_tracto=$(submit_job "dwi-tracto_${subj}${sessionfile}" "${cmd_tracto}" "${last_job}" "${TRACTO_CPUS}" "${TRACTO_MEM}" "${TRACTO_TIME}")
     echo "Submitted dwi-tracto job: ${job_id_tracto}"
     last_job="${job_id_tracto}"
@@ -175,7 +201,7 @@ fi
 # ============================================================
 # STAGE 3: dwi-qc (always runs)
 # ============================================================
-cmd_qc="apptainer run --cleanenv --bind ${bindcmd} --env TMPDIR=${tmpdir} --env TMP=${tmpdir} --env TEMP=${tmpdir} ${containerpath} dwi-qc ${subjspecjson}"
+cmd_qc="apptainer run --cleanenv --bind ${bindcmd} ${containerpath} dwi-qc ${subjspecjson}"
 job_id_qc=$(submit_job "dwi-qc_${subj}${sessionfile}" "${cmd_qc}" "${last_job}" "${QC_CPUS}" "${QC_MEM}" "${QC_TIME}")
 echo "Submitted dwi-qc job: ${job_id_qc}"
 last_job="${job_id_qc}"

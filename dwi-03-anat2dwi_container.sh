@@ -368,7 +368,7 @@ fi
 if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
 
     log "$BLUE" "FreeSurfer output found, proceeding with 5TT generation and GM/WM boundary creation"
-    
+
     if [[ ! -f "${workdir}/${subj}/freesurfer/${subj}/scripts/T1w-2-dwi.done" ]]; then
         mkdir -p "${workdir}/${subj}/freesurfer/"
         log "$BLUE" "Copying FreeSurfer output to workdir"
@@ -698,6 +698,11 @@ log "$BLUE" "-----------------------------------"
         "${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.mgz" \
         "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz"
 
+    # --- Step 6: convert to integer type (mgz) for FreeSurfer compatibility ---
+    mri_convert --in_type mgz --out_type mgz -odt int \
+        "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz" \
+        "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz"
+
     rm -f "${SUBJECTS_DIR}/${subj}/mri/cerebellum_mask.mgz" \
           "${xfm_dir}/mni_in_subj_QC.mgz"
 fi
@@ -777,13 +782,13 @@ convert_to_dwi_space () {
     local tmp_conv
     if [[ -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
         tmp_conv="${workanat}/${pref}res-FS_atlas-${label}_temp.nii.gz"
-        mri_convert --in_type mgz --out_type nii --out_orientation RAS \
+        mri_convert --in_type mgz --out_type nii --out_orientation RAS -rt nearest -odt int \
             "${src_mgz}" "${tmp_conv}"
         mrgrid "${tmp_conv}" regrid -template "${hybridtemplate}" \
             -interp nearest "${out_dseg_temp}" -force
     else
         tmp_conv="${workdir}/${subj}/anat/${subj}_res-FS_atlas-${label}_temp.nii.gz"
-        mri_convert --in_type mgz --out_type nii --out_orientation RAS \
+        mri_convert --in_type mgz --out_type nii --out_orientation RAS -rt nearest -odt int\
             "${src_mgz}" "${tmp_conv}"
         mrtransform "${tmp_conv}" \
             -linear "${workxfms}/${pref}desc-mrtrix_T1w-2-dwi.txt" \

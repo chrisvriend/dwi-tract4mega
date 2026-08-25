@@ -145,10 +145,10 @@ def main():
 
     if is_whole_sphere:
         print("WHOLE_SPHERE")
-        sys.exit(0)
     else:
         print("HALF_SPHERE")
-        sys.exit(1)
+        
+    sys.exit(0)
 
 
 if __name__ == "__main__":

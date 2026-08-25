@@ -4,9 +4,8 @@
 # SLURM DIRECTIVES
 ########################
 
-#SBATCH --begin=2026-08-22T10:00:00
 #SBATCH --job-name=dwipipeline
-#SBATCH --partition=defq
+#SBATCH --partition=<your partition>
 #SBATCH --cpus-per-task=1
 #SBATCH --qos=normal
 #SBATCH --mem=20M
@@ -14,19 +13,13 @@
 #SBATCH --nice=2000
 #SBATCH --output=%x_%A_%a.log
 #SBATCH --array=1-1%1
-# NOTE: --array above is a fallback only. In practice this script is
-# submitted via submit_pipeline.sh, which passes --array=1-N%throttle
-# on the sbatch command line, and command-line flags override this.
+# NOTE: --array above is a fallback only. Command-line flags override this.
 
 set -euo pipefail
 
 ml apptainer
 templatejson=$1
-containerpath=/net/beegfs/users/P042819/tractoprep-v1.0.5.sif
-#hostworkdir=/scratch/users/P042819/work
-
-#export FSLOUTPUTTYPE=NIFTI_GZ
-#export APPTAINER_BINDPATH="/net/beegfs/users/P042819,/home/P042819,/scratch/users/P042819"
+containerpath=/net/beegfs/tractoprep-v1.0.5.sif
 
 
 Usage() {
@@ -102,10 +95,10 @@ preproc_nifti="${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessio
 preproc_bvec="${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec"
 preproc_qc="${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz"
 preproc_anat="${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz"
-preproc_atlas="${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-300P7N_dseg.nii.gz"
+preproc_atlas="${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-400P17N_dseg.nii.gz"
 
 tracto_file="${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck"
-conn_file="${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-400P7N_desc-streams_connmatrix.csv"
+conn_file="${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-400P17N_desc-streams_connmatrix.csv"
 
 # ============================================================
 # Helper: submit a job, optionally depending on a previous job
@@ -131,7 +124,7 @@ submit_job () {
 
     sbatch --parsable \
         --job-name="${jobname}" \
-        --partition=defq \
+        --partition=${SLURM_JOB_PARTITION} \
         --time="${time}" \
         --mem="${mem}" \
         --cpus-per-task="${cpus}" \
@@ -152,7 +145,7 @@ apptainer run --cleanenv \
 
 # Per-stage resource settings
 PREPROC_CPUS=8;   PREPROC_MEM=28G; PREPROC_TIME=07:00:00
-TRACTO_CPUS=16;   TRACTO_MEM=4G;   TRACTO_TIME=04:00:00
+TRACTO_CPUS=16;   TRACTO_MEM=4G;   TRACTO_TIME=02:00:00
 QC_CPUS=1;        QC_MEM=4G;       QC_TIME=00:10:00
 
 last_job=""
@@ -179,7 +172,16 @@ else
 fi
 
 # ============================================================
-# STAGE 2: dwi-tracto (skip if outputs already exist)
+# STAGE 2: dwi-qc (always runs)
+# ============================================================
+cmd_qc="apptainer run --cleanenv --bind ${bindcmd} ${containerpath} dwi-qc ${subjspecjson}"
+job_id_qc=$(submit_job "dwi-qc_${subj}${sessionfile}" "${cmd_qc}" "${last_job}" "${QC_CPUS}" "${QC_MEM}" "${QC_TIME}")
+echo "Submitted dwi-qc job: ${job_id_qc}"
+last_job="${job_id_qc}"
+
+
+# ============================================================
+# STAGE 3: dwi-tracto (skip if outputs already exist)
 # ============================================================
 if [ -f "${tracto_file}" ] && [ -f "${conn_file}" ]; then
     echo "Tractography already done for ${subj} ${session:-}, skipping tracto job."
@@ -199,7 +201,7 @@ else
 fi
 
 # ============================================================
-# STAGE 3: dwi-qc (always runs)
+# STAGE 4: dwi-qc (always runs)
 # ============================================================
 cmd_qc="apptainer run --cleanenv --bind ${bindcmd} ${containerpath} dwi-qc ${subjspecjson}"
 job_id_qc=$(submit_job "dwi-qc_${subj}${sessionfile}" "${cmd_qc}" "${last_job}" "${QC_CPUS}" "${QC_MEM}" "${QC_TIME}")

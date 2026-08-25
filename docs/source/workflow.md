@@ -18,3 +18,9 @@
 {doc}`running` for details on each pipeline step, and
 {doc}`troubleshooting` if a step fails.
 ```
+## SLURM array launcher
+
+```{literalinclude} ../../dwi-00_launch_slurm_container.sh 
+:language: bash
+:linenos:
+```

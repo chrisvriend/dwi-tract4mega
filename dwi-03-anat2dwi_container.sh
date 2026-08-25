@@ -366,6 +366,9 @@ fi
 
 # --- 5TT generation and GM/WM boundary ---
 if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-2-dwi.done" ]]; then
+
+    log "$BLUE" "FreeSurfer output found, proceeding with 5TT generation and GM/WM boundary creation"
+    
     if [[ ! -f "${workdir}/${subj}/freesurfer/${subj}/scripts/T1w-2-dwi.done" ]]; then
         mkdir -p "${workdir}/${subj}/freesurfer/"
         log "$BLUE" "Copying FreeSurfer output to workdir"

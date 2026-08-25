@@ -17,7 +17,6 @@ outputdir/
               │              # interface images
               ├── qc/        # CNR maps, denoising residuals, and other
               │              # QC-relevant intermediates
-              ├── figures/   # QC figures
               └── log/       # per-step timestamped log files (preproc, eddy,
                             # anat2dwi)
 ```
@@ -28,7 +27,7 @@ subject. If any are missing, it leaves the workdir intact for
 inspection and reports an error rather than deleting your scratch
 data.
 
-## Key final preprocessing outputs to check for downstream use
+## dwi-preproc key final outputs 
 
 - `*_space-dwi_desc-preproc_dwi.nii.gz` / `.bval` / `.bvec`
 - `*_space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz`
@@ -36,3 +35,29 @@ data.
   `atlas-400P17N` variant
 - `*_space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz`
 - `*_space-dwi_res-high_desc-gmwm_probseg.nii.gz`
+
+`dwi-tracto` 
+`outputdir/dwi-tracto/<subj>/[<session>/]`, including the following
+subfolders (names as produced by the pipeline):
+
+```text
+outputdir/
+└── dwi-tracto/
+    └── sub-01/
+              ses-Tx / (optional)
+              ├── dwi/       # WM FOD image, tractogram and SIFT weights,
+              ├── conn/      # structural connectivity matrices 
+              │              # (e.g., atlas-300P17N, atlas-400P17N)
+              ├── rpf/      # response functions  
+              │              # (i.e. for CSF, WM and GM)
+              ├── qc/        # tissue RGB, downsampled tractogram
+              └── log/       # per-step timestamped log files (preproc, eddy,
+                            # anat2dwi)
+```
+
+## dwi-tracto key final outputs 
+
+- `*_space-dwi_tracto-<nstreamlines>.tck`
+- `*_space-dwi_tracto-<nstreamlines_desc-sift_weights.txt`
+- `*_atlas-300P17N_desc-streams_connmatrix.csv`
+- `*_atlas-400P17N_desc-streams_connmatrix.csv`

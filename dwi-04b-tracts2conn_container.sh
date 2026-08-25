@@ -92,8 +92,6 @@ if [ -f "${outputdir}/dwi-connectome/${subj}${sessionpath}dwi/${subj}${sessionfi
         ${workdir}/${subj}${sessionpath}dwi/
 fi
 
-if 
-
 if [ -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif ]; then
     :
 elif [[ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc-biascor_dwi.mif ]] \
@@ -259,7 +257,6 @@ for atlas in BNA 300P7N 400P17N 400P17N-Buckner; do
                 log "$RED" ""
                 log "$RED" "!ERROR! ${scalar} scalar file does not exist"
                 log "$RED" ""
-                continue
             fi
         fi
     done

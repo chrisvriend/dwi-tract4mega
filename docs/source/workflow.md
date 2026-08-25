@@ -10,8 +10,9 @@
 5. **Inspect QC outputs** (`dwi-qc`) before proceeding — check
    registration quality (`check_atlasreg.py`) and CNR/denoising maps.
 6. **Run `dwi-tracto`** on subjects that pass QC.
-7. **Run `dwi-send`** to export the completed derivatives.
-8. Use **`dwi-params`** at any stage to pull out acquisition/processing
+7. **Run `dwi-qc`** (again) to update qc html pages.
+8. **Run `dwi-send`** to export the completed derivatives.
+9. Use **`dwi-params`** at any stage to pull out acquisition/processing
    parameters for logging or a shared summary spreadsheet.
 
 ```{seealso}

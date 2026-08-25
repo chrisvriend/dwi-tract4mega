@@ -13,7 +13,7 @@ where `<pipeline>` is one of: `dwi-preproc`, `dwi-tracto`, `dwi-qc`,
 The `spec.json` file contains the full paths to the input and output
 directories, and the settings for the pipeline — see {doc}`spec-json`.
 
-## DWI-PREPROC
+## dwi-preproc
 
 1. Preprocessing of diffusion MRI scans, including denoising,
    susceptibility-induced distortion correction (with PEPolar field
@@ -42,15 +42,15 @@ if `nthreads` > 2.
 **Outputs (in dwi space):**
 
 - eddy-corrected diffusion MRI
-  (`/dwi/<subj>_space-dwi_desc-preproc_dwi.nii.gz`)
+  (`/dwi/<subj>[_<session>]_space-dwi_desc-preproc_dwi.nii.gz`)
 - 5TT image
-  (`/anat/<subj>_space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz`)
+  (`/anat/<subj>[_<session>]_space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz`)
 - gray/white matter boundary image
-  (`/anat/<subj>_space-dwi_res-high_desc-gmwm_probseg.nii.gz`)
+  (`/anat/<subj>[_<session>]_space-dwi_res-high_desc-gmwm_probseg.nii.gz`)
 - atlas segmentations
-  (`/anat/<subj>_space-dwi_res-high_atlas-<atlas>_dseg.nii.gz`)
+  (`/anat/<subj>[_<session>]_space-dwi_res-high_atlas-<atlas>_dseg.nii.gz`)
 
-## DWI-TRACTO
+## dwi-tracto
 
 Performs tractography (fiber orientation estimation and streamline
 generation) on the preprocessed DWI data from the previous step. Throws
@@ -60,7 +60,18 @@ available. The default for the ENIGMA OCD project is 20 million seeds
 number of streamlines between the different atlas regions and produces
 structural connectivity matrices.
 
-## DWI-QC
+
+**Outputs:**
+
+- Tractogram
+  (`/dwi/<subj>[_<session>]_space-dwi_tracto-<nstreamlines>.tck`)
+- SIFT weights
+  (`/dwi/<subj>[_<session>]_space-dwi_tracto-<nstreamlines>_desc-sift_weights.txt`)
+- Connectivity matrix
+  (`/conn/<subj>[_<session>]_atlas-<atlas>_desc-streams_connmatrix.csv`)
+
+
+## dwi-qc
 
 Produces a QC HTML page per participant to quickly assess the quality
 of the diffusion MRI preprocessing, the registration between the T1w
@@ -68,7 +79,11 @@ and diffusion scans, and the tractography. This step can be run right
 after `dwi-preproc` (recommended) or after `dwi-tracto`. When run after
 `dwi-preproc`, the `dwi-tracto` outputs will (naturally) not be shown.
 
-## DWI-PARAMS
+**Outputs:**
+`dwi-preproc/<subj>[_<session>].html`
+
+
+## dwi-params
 
 Collects the scanning parameters from the T1w structural MRI, diffusion
 MRI, and field maps (if available) and summarizes them in an HTML
@@ -76,7 +91,7 @@ report. This lets users quickly spot discrepancies in imaging
 parameters between participants in a sample, and is used to write up
 the methods for the ENIGMA OCD paper.
 
-## DWI-SEND
+## dwi-send
 
 Copies the completed derivatives and makes them ready to send to the
 project lead, along with the clinical covariates file.

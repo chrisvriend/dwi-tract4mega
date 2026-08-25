@@ -8,17 +8,18 @@ subfolders (names as produced by the pipeline):
 outputdir/
 └── dwi-preproc/
     └── sub-01/
-        ├── dwi/       # preprocessed DWI (denoised, degibbs'd,
-        │              # eddy/topup-corrected), bval/bvec
-        ├── fmap/      # topup fieldmap outputs, unwarped reference images
-        ├── anat/      # anatomical-to-DWI registration, parcellations
-        │              # (e.g., atlas-300P7N, atlas-400P7N), 5TT/GM-WM
-        │              # interface images
-        ├── qc/        # CNR maps, denoising residuals, and other
-        │              # QC-relevant intermediates
-        ├── figures/   # QC figures
-        └── log/       # per-step timestamped log files (preproc, eddy,
-                       # anat2dwi)
+              ses-Tx / (optional)
+              ├── dwi/       # preprocessed DWI (denoised, degibbs'd,
+              │              # eddy/topup-corrected), bval/bvec
+              ├── fmap/      # topup fieldmap outputs, unwarped reference images
+              ├── anat/      # anatomical-to-DWI registration, parcellations
+              │              # (e.g., atlas-300P17N, atlas-400P17N), 5TT/GM-WM
+              │              # interface images
+              ├── qc/        # CNR maps, denoising residuals, and other
+              │              # QC-relevant intermediates
+              ├── figures/   # QC figures
+              └── log/       # per-step timestamped log files (preproc, eddy,
+                            # anat2dwi)
 ```
 
 The wrapper verifies that a specific set of expected output files
@@ -31,7 +32,7 @@ data.
 
 - `*_space-dwi_desc-preproc_dwi.nii.gz` / `.bval` / `.bvec`
 - `*_space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz`
-- `*_space-dwi_res-high_atlas-300P7N_dseg.nii.gz` and the
-  `atlas-400P7N` variant
+- `*_space-dwi_res-high_atlas-300P17N_dseg.nii.gz` and the
+  `atlas-400P17N` variant
 - `*_space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz`
 - `*_space-dwi_res-high_desc-gmwm_probseg.nii.gz`

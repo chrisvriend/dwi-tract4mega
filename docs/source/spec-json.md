@@ -19,7 +19,7 @@
 
 | Key | Meaning |
 |---|---|
-| `subj` | Subject ID of the scan to run `dwi-preproc` or `dwi-tracto` on |
+| `subj` | Subject ID of the scan to run `dwi-preproc`, `dwi-tracto` or `dwi-qc` on |
 | `session` | Session ID, e.g. `ses-T0` — leave blank if there are no sessions |
 | `eddy_method` | Method used for eddy correction (`default`) |
 | `nstreamlines` | Number of streamlines for tractography (default `20M`) |
@@ -42,6 +42,6 @@ apptainer exec tractoprep.sif /tracto/helpers/create_spec_template.sh > spec.jso
 
 ## Low-memory systems
 
-The preprocessing script supports a `lowmem` flag in `spec.json` for
+The preprocessing script supports an additional `lowmem` flag in `spec.json` for
 running FreeSurfer 8.2.0 on memory-constrained nodes. Set it to enable
 this behavior.

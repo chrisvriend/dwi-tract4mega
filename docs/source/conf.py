@@ -7,8 +7,8 @@
 
 project = "TractoPrep"
 copyright = "2026, TractoPrep contributors"
-author = "TractoPrep contributors"
-release = "1.0.4"
+author = "Chris Vriend - Amsterdam UMC"
+release = "1.0.5"
 
 # -- General configuration ----------------------------------------------------
 

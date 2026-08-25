@@ -83,7 +83,7 @@ project lead, along with the clinical covariates file.
 
 ```{tip}
 Run these **in dependency order** for a fresh subject:
-`dwi-preproc` → `dwi-tracto` → `dwi-qc` → `dwi-send`, using `dwi-params`
+`dwi-preproc` → `dwi-qc` → `dwi-tracto` → `dwi-qc` (updates previous qc html) → `dwi-send`, using `dwi-params`
 at any point you just need parameter extraction.
 ```
 

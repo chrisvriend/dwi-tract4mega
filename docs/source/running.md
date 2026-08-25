@@ -1,0 +1,141 @@
+# Running the Container
+
+Regardless of engine (Docker, Podman, or Apptainer), the invocation
+pattern is always:
+
+```text
+<container-run-command> <container-image> <pipeline> <path-to-spec.json>
+```
+
+where `<pipeline>` is one of: `dwi-preproc`, `dwi-tracto`, `dwi-qc`,
+`dwi-params`, `dwi-send`.
+
+The `spec.json` file contains the full paths to the input and output
+directories, and the settings for the pipeline — see {doc}`spec-json`.
+
+## DWI-PREPROC
+
+1. Preprocessing of diffusion MRI scans, including denoising,
+   susceptibility-induced distortion correction (with PEPolar field
+   maps or using synthetic field maps), and eddy and motion correction.
+   By default (parameter in `spec.json`) eddy is run with the
+   `--repol` flag (outlier replacement), but without intra-volume
+   motion or susceptibility-by-motion correction.
+
+   The pipeline checks whether sampling was performed on a whole or
+   half sphere and adjusts the eddy settings accordingly — see the
+   [FSL eddy documentation](https://fsl.fmrib.ox.ac.uk/fsl/docs/diffusion/eddy/index.html)
+   for more information.
+
+2. Processing of the T1-weighted anatomical image and registration to
+   the diffusion MRI scan. This includes running FreeSurfer (v8.2.0) —
+   if the participant doesn't already have FreeSurfer output available
+   in `freesurferdir` — creating a "5 tissue type" (5TT) segmentation
+   file for anatomically constrained tractography (ACT), and warping
+   atlases to diffusion space.
+
+```{note}
+Eddy correction and FreeSurfer + anat2dwi registration run in parallel
+if `nthreads` > 2.
+```
+
+**Outputs (in dwi space):**
+
+- eddy-corrected diffusion MRI
+  (`/dwi/<subj>_space-dwi_desc-preproc_dwi.nii.gz`)
+- 5TT image
+  (`/anat/<subj>_space-dwi_res-high_desc-5tt-hsvs_probseg.nii.gz`)
+- gray/white matter boundary image
+  (`/anat/<subj>_space-dwi_res-high_desc-gmwm_probseg.nii.gz`)
+- atlas segmentations
+  (`/anat/<subj>_space-dwi_res-high_atlas-<atlas>_dseg.nii.gz`)
+
+## DWI-TRACTO
+
+Performs tractography (fiber orientation estimation and streamline
+generation) on the preprocessed DWI data from the previous step. Throws
+an error if no preprocessed diffusion MRI or 5TT segmentation file is
+available. The default for the ENIGMA OCD project is 20 million seeds
+(set in `spec.json`). After producing a tractogram, it determines the
+number of streamlines between the different atlas regions and produces
+structural connectivity matrices.
+
+## DWI-QC
+
+Produces a QC HTML page per participant to quickly assess the quality
+of the diffusion MRI preprocessing, the registration between the T1w
+and diffusion scans, and the tractography. This step can be run right
+after `dwi-preproc` (recommended) or after `dwi-tracto`. When run after
+`dwi-preproc`, the `dwi-tracto` outputs will (naturally) not be shown.
+
+## DWI-PARAMS
+
+Collects the scanning parameters from the T1w structural MRI, diffusion
+MRI, and field maps (if available) and summarizes them in an HTML
+report. This lets users quickly spot discrepancies in imaging
+parameters between participants in a sample, and is used to write up
+the methods for the ENIGMA OCD paper.
+
+## DWI-SEND
+
+Copies the completed derivatives and makes them ready to send to the
+project lead, along with the clinical covariates file.
+
+```{tip}
+Run these **in dependency order** for a fresh subject:
+`dwi-preproc` → `dwi-tracto` → `dwi-qc` → `dwi-send`, using `dwi-params`
+at any point you just need parameter extraction.
+```
+
+## Helper scripts
+
+Because the entry point reads *all* its locations from the `spec.json`
+file (BIDS dir, output dir, work dir, FreeSurfer dir), you must:
+
+1. Bind-mount every host directory referenced in `spec.json` into the
+   container.
+2. Make sure the **paths inside `spec.json` are the container-side
+   paths**, not the host paths — e.g. mount `/data/bids` on the host to
+   `/bids` in the container, and set `"bidsdir": "/bids"` in
+   `spec.json`, not the host path.
+
+### Docker / Podman
+
+```bash
+docker || podman run --rm \
+  -v /host/path/to/bids:/host/path/to/bids \
+  -v /host/path/to/output:/host/path/to/output \
+  -v /host/path/to/work:/host/path/to/work \
+  -v /host/path/to/freesurfer:/host/path/to/freesurfer \
+  -v /host/path/to/spec.json \
+  cvriend/tractoprep \
+  dwi-preproc spec.json
+```
+
+Add `--user $(id -u):$(id -g)` if you want output files to be owned by
+your host user rather than root.
+
+With Podman you can add a `:Z` suffix to relabel bind mounts for
+SELinux-enforcing hosts — omit it if not applicable.
+
+### Apptainer
+
+```bash
+apptainer --cleanenv run \
+  --bind /host/path/to/bids:/bids \
+  --bind /host/path/to/output:/output \
+  --bind /host/path/to/work:/work \
+  --bind /host/path/to/freesurfer:/freesurfer \
+  --bind /host/path/to/spec.json:/spec/spec.json \
+  tractoprep.sif \
+  dwi-preproc /spec/spec.json
+```
+
+- Make sure you have sufficient disk space for a workdir (scratch
+  space, deleted automatically after successful completion of a
+  subject) and an output dir.
+
+```{note}
+**Resource recommendations:** on SLURM clusters, ...
+*(fill in your site's SLURM resource recommendations here.)*
+```

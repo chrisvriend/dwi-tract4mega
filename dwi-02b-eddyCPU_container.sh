@@ -50,6 +50,7 @@ NC='\033[0m' # No Color
 # Initialize variables
 bidsdir=""
 outputdir=""
+scriptdir=""
 workdir=""
 subj=""
 session=""
@@ -175,6 +176,8 @@ fi
 
 
 # run detect whole / half sphere sampling
+log "$BLUE" "infering sphere sampling scheme from bvecs"
+
 sampling=$(python ${scriptdir}/helpers/detect_sphere_sampling.py \
     "${DWIbvecs}")
 
@@ -214,7 +217,6 @@ default)
         -b "${DWIbvals}" \
         -f "${topup}_fieldmap.nii.gz"
     ;;
-
 slmlinear)
     eddy diffusion \
         --imain="${DWImain}" \
@@ -297,7 +299,6 @@ volcorr | volcorrnosdc)
         exit 1
     fi
     ;;
-
 nofmap)
     eddy diffusion \
         --imain="${DWImain}" \
@@ -318,7 +319,6 @@ nofmap)
         -m "${DWImask}" \
         -b "${DWIbvals}"
     ;;
-
 *)
     log "$RED" "Proper method for eddy not set"
     exit 1

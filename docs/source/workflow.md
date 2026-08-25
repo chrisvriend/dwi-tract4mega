@@ -18,9 +18,16 @@
 {doc}`running` for details on each pipeline step, and
 {doc}`troubleshooting` if a step fails.
 ```
-## SLURM array launcher
+## SLURM array pipeline launcher (for apptainer)
 
 ```{literalinclude} ../../dwi-00_launch_slurm_container.sh 
+:language: bash
+:linenos:
+```
+
+## pipeline launcher without SLURM (for apptainer)
+
+```{literalinclude} ../../dwi-00_launch_noslurm.sh 
 :language: bash
 :linenos:
 ```

@@ -108,8 +108,8 @@ fi
 
     files=$(echo "
     ${outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck
-    ${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-300P7N_desc-streams_connmatrix.csv
-    ${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-BNA_desc-streams_connmatrix.csv
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-300P17N_desc-streams_connmatrix.csv
+    ${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-400P17N_desc-streams_connmatrix.csv
     ${outputdir}/dwi-tracto/${subj}${sessionpath}rpf/${subj}${sessionfile}space-dwi_tissue-CSF_response.txt
     ${outputdir}/dwi-tracto/${subj}${sessionpath}rpf/${subj}${sessionfile}space-dwi_tissue-WM_response.txt
     ${outputdir}/dwi-tracto/${subj}${sessionpath}rpf/${subj}${sessionfile}space-dwi_tissue-GM_response.txt

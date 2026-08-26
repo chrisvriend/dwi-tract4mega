@@ -14,19 +14,19 @@ uses the same commands as Docker. The container is approximately 19 GB.
 
 :::{tab-item} Docker
 `````bash
-docker pull docker://cvriend/tractoprep:v1.0.5
+docker pull docker://cvriend/tractoprep:{{RELEASE_TAG}}
 `````
 :::
 
 :::{tab-item} Podman
 `````bash
-podman pull docker://cvriend/tractoprep:v1.0.5
+podman pull docker://cvriend/tractoprep:{{RELEASE_TAG}}
 `````
 :::
 
 :::{tab-item} Apptainer
 `````bash
-apptainer pull docker://cvriend/tractoprep:v1.0.5
+apptainer pull docker://cvriend/tractoprep:{{RELEASE_TAG}}
 `````
 :::
 

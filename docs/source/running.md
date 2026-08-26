@@ -121,11 +121,11 @@ file (BIDS dir, output dir, work dir, FreeSurfer dir), you must:
 ````bash
 docker run --rm \
   -v /host/path/to/bids:/bids \
-  -v /host/path/to/derivatives:/derivatives \
+  -v /host/path/to/output:/derivatives \
   -v /host/path/to/work:/work \
   -v /host/path/to/freesurfer:/freesurfer \
   -v /host/path/to/spec.json:/spec/spec.json \
-  cvriend/tractoprep|release| \
+  cvriend/tractoprep{{RELEASE_TAG}} \
   dwi-preproc /spec/spec.json
 ````
 :::
@@ -138,7 +138,7 @@ podman run --rm \
   -v /host/path/to/work:/work \
   -v /host/path/to/freesurfer:/freesurfer \
   -v /host/path/to/spec.json:/spec/spec.json \
-  cvriend/tractoprep|release| \
+  cvriend/tractoprep{{RELEASE_TAG}} \
   dwi-preproc /spec/spec.json
 `````
 You can add a `:Z` suffix to relabel bind mounts for
@@ -149,7 +149,7 @@ SELinux-enforcing hosts — omit it if not applicable.
 `````bash
  apptainer run --cleanenv \
       --bind /host/path/to/bids:/bids,/host/path/to/output:/derivatives,/host/path/to/work:/work,/host/path/to/freesurfer:/freesurfer \
-      tractoprep|release|.sif dwi-preproc /spec/spec.json
+      tractoprep_{{RELEASE_TAG}}.sif dwi-preproc /spec/spec.json
 `````
 :::
 ::::

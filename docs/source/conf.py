@@ -20,6 +20,13 @@ except Exception:
 
 version = release
 
+def replace_release_placeholder(app, docname, source):
+    source[0] = source[0].replace("{{RELEASE_TAG}}", release)
+
+
+def setup(app):
+    app.connect("source-read", replace_release_placeholder)
+
 # -- General configuration ----------------------------------------------------
 
 extensions = [

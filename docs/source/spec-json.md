@@ -24,7 +24,7 @@
 | `eddy_method` | Method used for eddy correction (`default`) |
 | `nstreamlines` | Number of streamlines for tractography (default `20M`) |
 | `bidsdir` | Path to the BIDS directory |
-| `outputdir` | Path to the output directory |
+| `outputdir` | Path to the output directory (derivatives) |
 | `workdir` | Path to the working directory (subject directories are deleted after processing) |
 | `freesurferdir` | Path to the FreeSurfer output directory |
 | `nthreads` | Number of threads to use per subject — see {doc}`running` for parallelization notes |

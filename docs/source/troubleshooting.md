@@ -1,8 +1,9 @@
 # Troubleshooting
 
-| Symptom | Likely cause |
+| Symptom | Likely cause + solution |
 |---|---|
 | `Usage: dwi-preproc\|dwi-tracto <specfile>` and immediate exit | You didn't supply both the pipeline name and the specfile path as the two arguments to the entry point. |
+| `FreeSurfer throws an error related to /scratch/.tmp` | We noticed that on some systems that have a /scratch directory, FreeSurfer tries to write files here on the host system but gets a permission denied error. the fix is to define /scratch in the container as a tmpdir and bind to a location on the host that does have write permissions and define several TMPdir environmental variables. apptainer example: apptainer run --bind ${bidsdir}:/bids,${workdir}:/work,${outputdir}:/derivatives,${tmpdir_job}:/scratch --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch tractoprep.sif ... |
 | `Error: Variable '<x>' is not set or is empty.` | A required key is missing or empty in `spec.json` — regenerate from `create_spec_template.sh` and check every field is filled in, and that the key names exactly match (case-sensitive). |
 | `no dwi scan/bvec found for <subj> - <session>` | BIDS naming mismatch, or the bind-mounted `bidsdir` inside the container doesn't point to the path you think it does — double check your `-v`/`--bind` mounts against the paths written in `spec.json`. |
 | `no TotalReadOutTime or PhaseEncodingDirection found in dwi json file` | The DWI `.json` sidecar is missing required BIDS metadata fields — fix at the source/BIDS-conversion stage. |

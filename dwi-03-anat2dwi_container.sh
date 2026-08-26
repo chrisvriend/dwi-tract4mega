@@ -740,7 +740,7 @@ fi
 log "$BLUE" "---Schaefer"
 rsync -rltpDv --ignore-existing "${FREESURFER_HOME}/subjects/fsaverage" "${SUBJECTS_DIR}"
 
-for parcel in 300P17N 400P17N; do
+for parcel in 300P7N 400P7N 300P17N 400P17N; do
     log "$BLUE" "Parcellation = ${parcel}"
     case "${parcel}" in
         300P7N) ID="300Parcels_7Networks" ;;

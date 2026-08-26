@@ -257,6 +257,7 @@ for atlas in BNA 300P7N 300P17N 400P7N 400P17N 400P17N-Buckner; do
                 log "$RED" ""
                 log "$RED" "!ERROR! ${scalar} scalar file does not exist"
                 log "$RED" ""
+                fi
             fi
         fi
     done

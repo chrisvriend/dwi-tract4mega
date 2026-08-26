@@ -6,7 +6,7 @@
    fill in subject, session (if applicable), and all paths — see {doc}`spec-json`.
 4. **Run `dwi-preproc`** for each subject/session. Loop this per
    subject on a cluster using the repo's SLURM array launchers, or
-   script your own loop calling Docker/Podman/Apptainer per subject. 
+   script your own loop calling Docker/Podman/Apptainer per subject.
 5. **Inspect QC outputs** (`dwi-qc`) before proceeding — check
    registration quality (`check_atlasreg.py`) and CNR/denoising maps.
 6. **Run `dwi-tracto`** on subjects that pass QC.
@@ -20,22 +20,24 @@
 {doc}`troubleshooting` if a step fails.
 ```
 
-
 ## Pipeline launcher
-Below are engine specific scripts to launch the entire workflow for your entire sample (in the bids directory) using a SLURM array or without. 
+
+Below are engine specific scripts to launch the entire workflow for your entire sample
+(in the bids directory) using a SLURM array or without.
 At the top of the script you can adjust how many participants are processed in parallel.
-Based on testing we provide best guess settings under the **Per-stage resource settings** section — adjust where necessary.
+Based on testing we provide best guess settings under the **Per-stage resource settings**
+section — adjust where necessary.
 
 ```{note}
-Although it is recommended to first run **dwi-qc** before continuing to **dwi-tracto** 
-in these pipeline launchers dwi-preproc and dwi-tracto are run back to back. 
+Although it is recommended to first run **dwi-qc** before continuing to **dwi-tracto**,
+in these pipeline launchers dwi-preproc and dwi-tracto are run back to back.
 ```
 
-::::::{tab-set}
-
-:::::{tab-item} SLURM
-
 ::::{tab-set}
+
+:::{tab-item} SLURM
+
+:::{tab-set}
 
 :::{tab-item} Docker
 ```{literalinclude} ../../dwi-00_launch_slurm_docker.sh
@@ -58,13 +60,13 @@ in these pipeline launchers dwi-preproc and dwi-tracto are run back to back.
 ```
 :::
 
-::::
+:::
 
-:::::
+:::
 
-:::::{tab-item} NO-SLURM
+:::{tab-item} NO-SLURM
 
-::::{tab-set}
+:::{tab-set}
 
 :::{tab-item} Apptainer
 ```{literalinclude} ../../dwi-00_launch_noslurm.sh
@@ -85,10 +87,8 @@ code here
 
 :::
 
+:::
+
+:::
+
 ::::
-
-:::::
-
-::::::
-
-

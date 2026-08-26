@@ -1,5 +1,5 @@
 sphinx>=7.0
 sphinx-rtd-theme>=2.0
-sphinx_design>=0.70
-sphinx-substitution-extensions>=2026.8.13.1
+sphinx_design>=0.6.1
+sphinx-substitution-extensions>=2026.8.13
 myst-parser>=2.0

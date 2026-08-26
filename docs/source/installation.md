@@ -10,12 +10,29 @@ uses the same commands as Docker. The container is approximately 19 GB.
 
 ## Option A — Pull from Docker Hub
 
-```bash
-docker || podman || apptainer pull docker://cvriend/tractoprep:v1.0.5
+## Option A — Pull from Docker Hub
 
-# e.g.
-docker pull docker://cvriend/tractoprep
-```
+::::{tab-set}
+
+:::{tab-item} Docker
+`````bash
+docker pull docker://cvriend/tractoprep:v1.0.5
+`````
+:::
+
+:::{tab-item} Podman
+`````bash
+podman pull docker://cvriend/tractoprep:v1.0.5
+`````
+:::
+
+:::{tab-item} Apptainer
+`````bash
+apptainer pull docker://cvriend/tractoprep:v1.0.5
+`````
+:::
+
+::::
 
 ## Option B — Direct .sif download (Apptainer)
 

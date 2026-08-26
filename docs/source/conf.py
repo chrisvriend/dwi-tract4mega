@@ -33,6 +33,7 @@ extensions = [
     "myst_parser",
     "sphinx_design",
     "sphinx_substitution_extensions",
+    "sphinx.ext.todo",
 ]
 
 source_suffix = {
@@ -56,3 +57,5 @@ html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,
 }
+
+todo_include_todos = True

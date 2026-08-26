@@ -8,13 +8,24 @@
 project = "TractoPrep"
 copyright = "2026, TractoPrep contributors"
 author = "Chris Vriend - Amsterdam UMC"
-release = "1.0.5"
+
+import subprocess
+
+try:
+    release = subprocess.check_output(
+        ["git", "describe", "--tags", "--abbrev=0"], text=True
+    ).strip().lstrip("v")
+except Exception:
+    release = "1.0.6"
+
+version = release
 
 # -- General configuration ----------------------------------------------------
 
 extensions = [
     "myst_parser",
     "sphinx_design",
+    "sphinx_substitution_extensions",
 ]
 
 source_suffix = {

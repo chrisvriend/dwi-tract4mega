@@ -10,8 +10,6 @@ uses the same commands as Docker. The container is approximately 19 GB.
 
 ## Option A — Pull from Docker Hub
 
-## Option A — Pull from Docker Hub
-
 ::::{tab-set}
 
 :::{tab-item} Docker

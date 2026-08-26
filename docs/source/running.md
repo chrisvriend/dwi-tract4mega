@@ -114,41 +114,50 @@ file (BIDS dir, output dir, work dir, FreeSurfer dir), you must:
    `/bids` in the container, and set `"bidsdir": "/bids"` in
    `spec.json`, not the host path.
 
-### Docker / Podman
+## Engine Specific Commands
+::::{tab-set}
 
-```bash
-docker || podman run --rm \
-  -v /host/path/to/bids:/host/path/to/bids \
-  -v /host/path/to/output:/host/path/to/output \
-  -v /host/path/to/work:/host/path/to/work \
-  -v /host/path/to/freesurfer:/host/path/to/freesurfer \
-  -v /host/path/to/spec.json \
-  cvriend/tractoprep \
-  dwi-preproc spec.json
-```
-
-Add `--user $(id -u):$(id -g)` if you want output files to be owned by
-your host user rather than root.
-
-With Podman you can add a `:Z` suffix to relabel bind mounts for
-SELinux-enforcing hosts — omit it if not applicable.
-
-### Apptainer
-
-```bash
-apptainer --cleanenv run \
-  --bind /host/path/to/bids:/bids \
-  --bind /host/path/to/output:/output \
-  --bind /host/path/to/work:/work \
-  --bind /host/path/to/freesurfer:/freesurfer \
-  --bind /host/path/to/spec.json:/spec/spec.json \
-  tractoprep.sif \
+:::{tab-item} Docker
+````bash
+docker run --rm \
+  -v /host/path/to/bids:/bids \
+  -v /host/path/to/derivatives:/derivatives \
+  -v /host/path/to/work:/work \
+  -v /host/path/to/freesurfer:/freesurfer \
+  -v /host/path/to/spec.json:/spec/spec.json \
+  cvriend/tractoprep|release| \
   dwi-preproc /spec/spec.json
-```
+````
+:::
+
+:::{tab-item} Podman
+`````bash
+podman run --rm \
+  -v /host/path/to/bids:/bids \
+  -v /host/path/to/output:/derivatives \
+  -v /host/path/to/work:/work \
+  -v /host/path/to/freesurfer:/freesurfer \
+  -v /host/path/to/spec.json:/spec/spec.json \
+  cvriend/tractoprep|release| \
+  dwi-preproc /spec/spec.json
+`````
+You can add a `:Z` suffix to relabel bind mounts for
+SELinux-enforcing hosts — omit it if not applicable.
+:::
+
+:::{tab-item} Apptainer
+`````bash
+ apptainer run --cleanenv \
+      --bind /host/path/to/bids:/bids,/host/path/to/output:/derivatives,/host/path/to/work:/work,/host/path/to/freesurfer:/freesurfer \
+      tractoprep|release|.sif dwi-preproc /spec/spec.json
+`````
+:::
+::::
 
 - Make sure you have sufficient disk space for a workdir (scratch
   space, deleted automatically after successful completion of a
   subject) and an output dir.
+
 
 ```{note}
 **Resource recommendations:** on SLURM clusters, ...

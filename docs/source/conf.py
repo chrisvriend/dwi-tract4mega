@@ -14,6 +14,7 @@ release = "1.0.5"
 
 extensions = [
     "myst_parser",
+    "sphinx_design",
 ]
 
 source_suffix = {

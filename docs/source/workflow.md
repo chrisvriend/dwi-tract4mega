@@ -33,62 +33,62 @@ Although it is recommended to first run **dwi-qc** before continuing to **dwi-tr
 in these pipeline launchers dwi-preproc and dwi-tracto are run back to back.
 ```
 
-::::{tab-set}
+:::::: {tab-set}
 
-:::{tab-item} SLURM
+::::: {tab-item} SLURM
 
-:::{tab-set}
+:::: {tab-set}
 
-:::{tab-item} Docker
+::: {tab-item} Docker
 ```{literalinclude} ../../dwi-00_launch_slurm_docker.sh
 :language: bash
 :linenos:
 ```
 :::
 
-:::{tab-item} Podman
+::: {tab-item} Podman
 ```{literalinclude} ../../dwi-00_launch_slurm_podman.sh
 :language: bash
 :linenos:
 ```
 :::
 
-:::{tab-item} Apptainer
+::: {tab-item} Apptainer
 ```{literalinclude} ../../dwi-00_launch_slurm_apptainer.sh
 :language: bash
 :linenos:
 ```
 :::
 
-:::
+::::
 
-:::
+:::::
 
-:::{tab-item} NO-SLURM
+::::: {tab-item} NO-SLURM
 
-:::{tab-set}
+:::: {tab-set}
 
-:::{tab-item} Apptainer
+::: {tab-item} Apptainer
 ```{literalinclude} ../../dwi-00_launch_noslurm.sh
 :language: bash
 :linenos:
 ```
 :::
 
-:::{tab-item} Docker
+::: {tab-item} Docker
 
 code here
 
 :::
 
-:::{tab-item} Podman
+::: {tab-item} Podman
 
 code here
-
-:::
-
-:::
 
 :::
 
 ::::
+
+:::::
+
+::::::

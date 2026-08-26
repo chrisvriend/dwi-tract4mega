@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 
 project = "TractoPrep"
-copyright = "2026, TractoPrep contributors"
+copyright = "2026, Chris Vriend - Amsterdam UMC"
 author = "Chris Vriend - Amsterdam UMC"
 
 import subprocess

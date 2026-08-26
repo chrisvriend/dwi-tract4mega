@@ -56,7 +56,7 @@ docker://cvriend/tractoprep:{{RELEASE_TAG}} \
 :::
 :::{tab-item} Apptainer
 `````bash
-apptainer exec tractoprep.{{RELEASE_TAg}} /tracto/helpers/create_spec_template.sh > spec.json
+apptainer exec tractoprep.{{RELEASE_TAG}} /tracto/helpers/create_spec_template.sh > spec.json
 `````
 :::
 ::::

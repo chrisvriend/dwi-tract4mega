@@ -25,7 +25,7 @@ docker run --rm -v <bidsdir>:/bids -v <outputdir>:/output -v <workdir>:/work \
 
 :::{tab-item} Podman
 `````bash
-docker run --rm -v <bidsdir>:/bids -v <outputdir>:/output -v <workdir>:/work \
+podman run --rm -v <bidsdir>:/bids -v <outputdir>:/output -v <workdir>:/work \
   -v <freesurferdir>:/freesurfer -v <path/to/spec.json>:/spec/spec.json \
   cvriend/tractoprep:{{RELEASE_TAG}} <<pipeline>> /spec/spec.json
 `````

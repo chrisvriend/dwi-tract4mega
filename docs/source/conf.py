@@ -16,7 +16,7 @@ try:
         ["git", "describe", "--tags", "--abbrev=0"], text=True
     ).strip().lstrip("v")
 except Exception:
-    release = "1.0.6"
+    release = "v1.0.6"
 
 version = release
 

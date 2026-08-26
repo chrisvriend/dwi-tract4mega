@@ -102,17 +102,17 @@ Run these **in dependency order** for a fresh subject:
 at any point you just need parameter extraction.
 ```
 
-## Helper scripts
-
+```{note}
 Because the entry point reads *all* its locations from the `spec.json`
-file (BIDS dir, output dir, work dir, FreeSurfer dir), you must:
+file (BIDSdir, outputdir, workdir, FreeSurferdir), you must:
 
 1. Bind-mount every host directory referenced in `spec.json` into the
    container.
 2. Make sure the **paths inside `spec.json` are the container-side
    paths**, not the host paths — e.g. mount `/data/bids` on the host to
    `/bids` in the container, and set `"bidsdir": "/bids"` in
-   `spec.json`, not the host path.
+   `spec.json`, not the host path. If this is not feasible for you, you can also bind to the exact same path: e.g. /data/bids:/data/bids
+```
 
 ## Engine Specific Commands
 ::::{tab-set}

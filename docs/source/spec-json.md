@@ -1,4 +1,4 @@
-# The spec.json Input File
+# Spec.json file
 
 ```json
 {
@@ -36,12 +36,34 @@
 A helper script, `create_spec_template.sh`, is provided to create an
 empty `spec.json` for you rather than writing one by hand:
 
-```bash
-apptainer exec tractoprep.sif /tracto/helpers/create_spec_template.sh > spec.json
-```
+
+::::{tab-set}
+
+:::{tab-item} Docker
+`````bash
+docker run --rm -v /host/path/to/specjsonlocation:/spec \
+docker://cvriend/tractoprep:{{RELEASE_TAG}} \
+/tracto/helpers/create_spec_template.sh > /spec/spec.json
+`````
+:::
+
+:::{tab-item} Podman
+`````bash
+podman run --rm -v /host/path/to/specjsonlocation:/spec \
+docker://cvriend/tractoprep:{{RELEASE_TAG}} \
+/tracto/helpers/create_spec_template.sh > /spec/spec.json
+`````
+:::
+:::{tab-item} Apptainer
+`````bash
+apptainer exec tractoprep.{{RELEASE_TAg}} /tracto/helpers/create_spec_template.sh > spec.json
+`````
+:::
+::::
 
 ## Low-memory systems
 
 The preprocessing script supports an additional `lowmem` flag in `spec.json` for
 running FreeSurfer 8.2.0 on memory-constrained nodes. Set it to enable
-this behavior.
+this behavior (expect longer run time)
+

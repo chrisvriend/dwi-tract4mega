@@ -14,22 +14,36 @@ induced distortion correction.
 
 ## Quick start
 
-```bash
-# Docker
-docker run --rm -v <bids>:/bids -v <out>:/output -v <work>:/work \
-  -v <fs>:/freesurfer -v <spec.json>:/spec/spec.json \
-  cvriend/tractoprep dwi-preproc /spec/spec.json
+::::{tab-set}
+:::{tab-item} Docker
+````bash
+docker run --rm -v <bidsdir>:/bids -v <outputdir>:/output -v <workdir>:/work \
+  -v <freesurferdir>:/freesurfer -v <path/to/spec.json>:/spec/spec.json \
+  cvriend/tractoprep:{{RELEASE_TAG}} <<pipeline>> /spec/spec.json
+````
+:::
 
-# Podman
-podman run --rm -v <bids>:/bids:Z -v <out>:/output:Z -v <work>:/work:Z \
-  -v <fs>:/freesurfer:Z -v <spec.json>:/spec/spec.json:Z \
-  docker://cvriend/tractoprep dwi-preproc /spec/spec.json
+:::{tab-item} Podman
+`````bash
+docker run --rm -v <bidsdir>:/bids -v <outputdir>:/output -v <workdir>:/work \
+  -v <freesurferdir>:/freesurfer -v <path/to/spec.json>:/spec/spec.json \
+  cvriend/tractoprep:{{RELEASE_TAG}} <<pipeline>> /spec/spec.json
+`````
+:::
 
-# Apptainer/Singularity (local .sif)
-apptainer exec --bind <bids>:/bids --bind <out>:/output --bind <work>:/work \
-  --bind <fs>:/freesurfer --bind <spec.json>:/spec/spec.json \
-  tractoprep.sif /tracto/dwi-00-entry.sh dwi-preproc /spec/spec.json
-```
+:::{tab-item} Apptainer
+`````bash
+apptainer run --cleanenv --bind \
+      /host/path/to/bids:/bids, \
+      /host/path/to/output:/derivatives, \
+      /host/path/to/work:/work, \
+      /host/path/to/freesurfer:/freesurfer \
+      /host/path/to/spec.json:/spec/spec.json
+      tractoprep_{{RELEASE_TAG}}.sif <<pipeline>> /spec/spec.json
+`````
+:::
+::::
+
 
 See {doc}`installation` and {doc}`spec-json` before running this for real —
 you need a container engine, the image, and a filled-in `spec.json`.

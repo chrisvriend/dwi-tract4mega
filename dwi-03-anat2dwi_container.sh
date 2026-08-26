@@ -843,7 +843,7 @@ convert_to_dwi_space "${SUBJECTS_DIR}/${subj}/mri/Buckner2011_17Networks.mgz" \
 # Computed dynamically instead of hardcoded, so it stays correct if the
 # parcellation's max node count ever changes.
 Nnodes=$(awk 'BEGIN{m=0} $1+0>m{m=$1} END{print m}' \
-    "${atlasdir}/Schaefer/Schaefer_400P17N_orig.txt")
+    "${atlasdir}/Schaefer/Schaefer_400P17N_modified.txt")
 awk -v c="$Nnodes" -v OFS='\t' '{ $1 = $1 + c; print }' \
     "${atlasdir}/Buckner/Buckner_17Networks_orig.txt" \
     > "${workanat}/Buckner_17Networks_mod.txt"

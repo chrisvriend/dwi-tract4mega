@@ -6,12 +6,9 @@
 
 #SBATCH --job-name=dwipipeline
 #SBATCH --partition=luna-cpu-long
-#SBATCH --partition=luna-cpu-long
 #SBATCH --cpus-per-task=1
 #SBATCH --qos=anw-cpu
-#SBATCH --qos=anw-cpu
 #SBATCH --mem=20M
-#SBATCH --time=12:00:00
 #SBATCH --time=12:00:00
 #SBATCH --nice=2000
 #SBATCH --output=%x_%A_%a.log
@@ -20,8 +17,6 @@
 
 set -euo pipefail
 
-#ml apptainer
-containerpath=/scratch/anw/cvriend/tractoprep-v1.0.6.sif
 #ml apptainer
 containerpath=/scratch/anw/cvriend/tractoprep-v1.0.6.sif
 
@@ -72,13 +67,13 @@ templatejson="${positional[0]}"
 host_bidsdir="${positional[1]}"
 host_outputdir="${positional[2]}"
 host_workdir="${positional[3]}"
-host_freesurferdir="${positional[4]:-}"
+host_freesurferdir="${positional[4]}"
 
 ##########################################################
 # Per-stage resource settings
 PREPARE_CPUS=4;   PREPARE_MEM=8G; PREPARE_TIME=01:00:00
-EDDY_CPUS=4;      EDDY_MEM=4G;    EDDY_TIME=05:00:00
-ANAT_CPUS=4;      ANAT_MEM=28G;     ANAT_TIME=05:00:00
+EDDY_CPUS=4;      EDDY_MEM=4G;    EDDY_TIME=06:00:00
+ANAT_CPUS=4;      ANAT_MEM=28G;     ANAT_TIME=06:00:00
 TRACTO_CPUS=16;   TRACTO_MEM=4G;   TRACTO_TIME=02:00:00
 CONN_CPUS=1;      CONN_MEM=2G;     CONN_TIME=01:00:00
 QC_CPUS=1;        QC_MEM=4G;       QC_TIME=00:10:00

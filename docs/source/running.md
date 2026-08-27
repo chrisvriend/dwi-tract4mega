@@ -165,8 +165,8 @@ SELinux-enforcing hosts — omit it if not applicable.
 
 ### dwi-preproc
 - `threads` : 8 - the pipeline automatically distributes these threads over the parallel eddy and anat2dwi (+ FreeSurfer) steps. (minimum = 2 threads)
-- `GB RAM` : 26 GB - FreeSurfer 8.2.0 is the bottleneck here. on systems with low memory 
-- `run time` : 6-8 hours with above settings (longer when `lowmem` is enabled in the spec.json file)
+- `GB RAM` : 26 GB - FreeSurfer 8.2.0 is the bottleneck here. on systems with low memory you can enable the `lowmem` flag in the spec.json (see {doc}`spec-json`)
+- `run time` : 6-8 hours with above settings (longer if `lowmem` is enabled)
 
 ### dwi-tracto
 - `threads` : 8-16
@@ -175,7 +175,6 @@ SELinux-enforcing hosts — omit it if not applicable.
 
 
 :::{note}
-Note that `run time` also depends on the CPU hardware, clockspeed, storage performance and system load.
-
+`run time` also depends on the CPU hardware, clockspeed, storage performance and system load.
 :::
 

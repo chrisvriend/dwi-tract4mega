@@ -5,11 +5,11 @@
 ########################
 
 #SBATCH --job-name=dwipipeline
-#SBATCH --partition=<your partition>
+#SBATCH --partition=luna-cpu-long
 #SBATCH --cpus-per-task=1
-#SBATCH --qos=normal
+#SBATCH --qos=anw-cpu
 #SBATCH --mem=20M
-#SBATCH --time=00:10:00
+#SBATCH --time=12:00:00
 #SBATCH --nice=2000
 #SBATCH --output=%x_%A_%a.log
 #SBATCH --array=1-1%1
@@ -17,8 +17,8 @@
 
 set -euo pipefail
 
-ml apptainer
-containerpath=/net/beegfs/tractoprep-v1.0.5.sif
+#ml apptainer
+containerpath=/scratch/anw/cvriend/tractoprep-v1.0.6.sif
 
 Usage() {
   echo "Usage: $0 <path_to_spec.json> <host_bidsdir> <host_outputdir> <host_workdir> [<host_freesurferdir>]"
@@ -35,7 +35,7 @@ Usage() {
 }
 
 # 4 required args, 5th (freesurferdir) is optional
-if [[ $# -lt 4 || $# -gt 5 ]]; then
+if [[ $# -gt 5 ]]; then
   Usage
 fi
 
@@ -43,8 +43,16 @@ templatejson=$1
 host_bidsdir=$2
 host_outputdir=$3
 host_workdir=$4
-# optional 5th arg
-host_freesurferdir="${5:-}"
+host_freesurferdir=${5}
+
+##########################################################
+# Per-stage resource settings
+PREPROC_CPUS=8;   PREPROC_MEM=28G; PREPROC_TIME=07:00:00
+TRACTO_CPUS=16;   TRACTO_MEM=4G;   TRACTO_TIME=02:00:00
+QC_CPUS=1;        QC_MEM=4G;       QC_TIME=00:10:00
+##########################################################
+
+
 
 # read spec.json file
 # NOTE: bidsdir/outputdir/workdir declared here are CONTAINER-side paths,
@@ -58,7 +66,7 @@ done
 unset subj
 
 # check container-side path variables (from spec.json) are non-empty
-for var in bidsdir outputdir workdir nstreamlines; do
+for var in bidsdir outputdir workdir freesurferdir nstreamlines; do
   if [[ -z "${!var}" ]]; then
     echo "Error: Variable '$var' is not set or is empty in ${templatejson}."
     exit 1
@@ -66,7 +74,7 @@ for var in bidsdir outputdir workdir nstreamlines; do
 done
 
 # check host-side path arguments are non-empty
-for var in host_bidsdir host_outputdir host_workdir; do
+for var in host_bidsdir host_outputdir host_freesurferdir host_workdir; do
   if [[ -z "${!var}" ]]; then
     echo "Error: '$var' argument is not set or is empty."
     exit 1
@@ -134,12 +142,22 @@ fi
 # NOTE: checked against HOST paths, since that's where the bind-mounted
 # files physically land. The pipeline itself writes to the container path.
 # ============================================================
+
+# preproc output
+topup_nifti="${host_outputdir}/dwi-preproc/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-unwarped_epi.nii.gz"
+degibbs_nifti="${host_outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns+degibbs_dwi.nii.gz"
+
+
+# eddy outputs
 preproc_nifti="${host_outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.nii.gz"
 preproc_bvec="${host_outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-preproc_dwi.bvec"
 preproc_qc="${host_outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_label-cnr-maps_desc-preproc_dwi.nii.gz"
+
+# anat-2-dwi
 preproc_anat="${host_outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz"
 preproc_atlas="${host_outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_atlas-400P17N_dseg.nii.gz"
 
+#tracto
 tracto_file="${host_outputdir}/dwi-tracto/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_tracto-${nstreamlines}.tck"
 conn_file="${host_outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-400P17N_desc-streams_connmatrix.csv"
 
@@ -176,12 +194,8 @@ submit_job () {
         --wrap="${cmd}"
 }
 
-# Per-stage resource settings
-PREPROC_CPUS=8;   PREPROC_MEM=28G; PREPROC_TIME=07:00:00
-TRACTO_CPUS=16;   TRACTO_MEM=4G;   TRACTO_TIME=02:00:00
-QC_CPUS=1;        QC_MEM=4G;       QC_TIME=00:10:00
-
 last_job=""
+all_jobs=()
 
 # ============================================================
 # STAGE 1: dwi-preproc + eddy (skip if outputs already exist)
@@ -201,6 +215,7 @@ else
     job_id_preproc=$(submit_job "dwi-preproc_${subj}${sessionfile}" "${cmd_preproc}" "${last_job}" "${PREPROC_CPUS}" "${PREPROC_MEM}" "${PREPROC_TIME}")
     echo "Submitted dwi-preproc job: ${job_id_preproc}"
     last_job="${job_id_preproc}"
+    all_jobs+=("${job_id_preproc}")
 fi
 
 # ============================================================
@@ -210,6 +225,7 @@ cmd_qc="apptainer run --cleanenv --bind ${bindcmd} ${containerpath} dwi-qc ${sub
 job_id_qc=$(submit_job "dwi-qc_${subj}${sessionfile}" "${cmd_qc}" "${last_job}" "${QC_CPUS}" "${QC_MEM}" "${QC_TIME}")
 echo "Submitted dwi-qc job: ${job_id_qc}"
 last_job="${job_id_qc}"
+all_jobs+=("${job_id_qc}")
 
 # ============================================================
 # STAGE 3: dwi-tracto (skip if outputs already exist)
@@ -228,6 +244,7 @@ else
     job_id_tracto=$(submit_job "dwi-tracto_${subj}${sessionfile}" "${cmd_tracto}" "${last_job}" "${TRACTO_CPUS}" "${TRACTO_MEM}" "${TRACTO_TIME}")
     echo "Submitted dwi-tracto job: ${job_id_tracto}"
     last_job="${job_id_tracto}"
+    all_jobs+=("${job_id_tracto}")
 fi
 
 # ============================================================
@@ -237,5 +254,37 @@ cmd_qc="apptainer run --cleanenv --bind ${bindcmd} ${containerpath} dwi-qc ${sub
 job_id_qc=$(submit_job "dwi-qc_${subj}${sessionfile}" "${cmd_qc}" "${last_job}" "${QC_CPUS}" "${QC_MEM}" "${QC_TIME}")
 echo "Submitted dwi-qc job: ${job_id_qc}"
 last_job="${job_id_qc}"
+all_jobs+=("${job_id_qc}")
 
-echo "All jobs submitted for ${subj}. Final job in chain: ${last_job}"
+# ============================================================
+# FINAL SENTINEL (WAIT HERE)
+# ============================================================
+
+# Collect all valid job IDs (filter out empty strings from skipped stages)
+valid_jobs=()
+for job_id in "${all_jobs[@]}"; do
+    if [[ "$job_id" =~ ^[0-9]+$ ]]; then
+        valid_jobs+=("$job_id")
+    fi
+done
+
+if [[ "${#valid_jobs[@]}" -gt 0 ]]; then
+    dep_string=$(IFS=:; printf "%s" "${valid_jobs[*]}")
+    dep_arg=(--dependency=afterok:${dep_string} --kill-on-invalid-dep=yes)
+    echo "Final sentinel job will depend on jobs: ${dep_string}"
+else
+    dep_arg=()
+    dep_string=""
+fi
+
+if [ -z "$dep_string" ]; then
+    echo "No jobs were submitted, skipping final sentinel job."
+else
+    final_job_id=$(sbatch --wait --parsable \
+        "${dep_arg[@]}" \
+        --job-name="dwi_Hodor_${subj}" \
+        --time=00:01:00 -c 1 --mem=10M \
+        --wrap "echo 'Pipeline finished for ${subj}'")
+
+    echo "Pipeline completed for ${subj} (final job ${final_job_id})"
+fi

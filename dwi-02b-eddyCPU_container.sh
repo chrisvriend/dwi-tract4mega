@@ -181,7 +181,6 @@ log "$BLUE" "infering sphere sampling scheme from bvecs"
 sampling=$(python ${scriptdir}/helpers/detect_sphere_sampling.py "${DWIbvecs}" 2>"${basedir}/detect_sphere_sampling.err") \
     || { log "$RED" "detect_sphere_sampling.py failed:"; cat "${basedir}/detect_sphere_sampling.err" >&2; exit 1; }
 
-
 if [[ "$sampling" == "HALF_SPHERE" ]]; then
     log "$YELLOW" "Detected half-sphere sampling"
     log "$YELLOW" "Setting eddy method to slmlinear"
@@ -195,6 +194,7 @@ else
     exit 1
 fi
 
+logfile="${outputdir}/dwi-preproc/${subj}/log/${subj}${sessionfile}eddy_$(date +"%Y-%m-%d_%H-%M").log"
 
 case "$method" in
 default)
@@ -209,7 +209,7 @@ default)
         --topup="${topup}" \
         --repol --cnr_maps \
         --verbose \
-        --nthr=${nthreads} >"${basedir}/eddy.log"
+        --nthr=${nthreads} >"${logfile}"
 
     run_qc "${DWIout}" \
         -idx index.txt \
@@ -231,7 +231,7 @@ slmlinear)
         --repol --cnr_maps \
         --slm=linear \
         --verbose \
-        --nthr=${nthreads} >"${basedir}/eddy.log"
+        --nthr=${nthreads} >"${logfile}"
 
     run_qc "${DWIout}" \
         -idx index.txt \
@@ -253,7 +253,7 @@ slmquadratic)
         --repol --cnr_maps \
         --slm=quadratic \
         --verbose \
-        --nthr=${nthreads} >"${basedir}/eddy.log"
+        --nthr=${nthreads} >"${logfile}"
 
     run_qc "${DWIout}" \
         -idx index.txt \
@@ -284,7 +284,7 @@ volcorr | volcorrnosdc)
         )
         [[ "$method" == "volcorr" ]] && eddy_args+=(--estimate_move_by_susceptibility)
 
-        eddy diffusion "${eddy_args[@]}" --verbose >"${basedir}/eddy.log"
+        eddy diffusion "${eddy_args[@]}" --verbose >"${logfile}"
 
         run_qc "${DWIout}" \
             -idx index.txt \
@@ -312,7 +312,7 @@ nofmap)
         --repol --cnr_maps \
         --slm=linear \
         --nthr=${nthreads} \
-        --verbose >"${basedir}/eddy.log"
+        --verbose >"${logfile}"
 
     run_qc "${DWIout}" \
         -idx "${basedir}/index.txt" \
@@ -325,8 +325,6 @@ nofmap)
     exit 1
     ;;
 esac
-
-cp ${basedir}/eddy.log "${outputdir}/dwi-preproc/${subj}/log/${subj}${sessionfile}eddy_$(date +"%Y-%m-%d_%H-%M").log"
 
 # rename output
 cd "${workdir}/${subj}${sessionpath}dwi"

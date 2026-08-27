@@ -4,6 +4,9 @@
 # Author: C. Vriend - AUMC
 # Date: Nov 05 2025
 # Description: Preprocessing pipeline for anatomical to DWI registration and atlas mapping.
+
+# Optimizations: ? add FLAIR / T2 support but then also need to register them to dwi-space? 
+
 ###############################################################################
 
 set -euo pipefail
@@ -326,13 +329,18 @@ if [[ ! -d "${freesurferdir}/${subj}" || ! -f "${freesurferdir}/${subj}/surf/lh.
 
     if [[ "${lowmem}" -eq 1 ]]; then
 
+        log "$BLUE" "-----low memory mode: setting FS_V8_XOPTS=0 to avoid memory issues with recon-all"
         export FS_V8_XOPTS=0 && recon-all -sd ${workdir}/${subj}/freesurfer  \
             -subjid ${subj} -i ${workanat}/${pref}space-dwi_res-FS_T1w.nii.gz \
             -all -parallel --threads ${nthreads} 
+
+
     else 
         recon-all -sd ${workdir}/${subj}/freesurfer  \
         -subjid ${subj} -i ${workanat}/${pref}space-dwi_res-FS_T1w.nii.gz \
         -all -parallel --threads ${nthreads}
+
+
     fi
 
     if [ $? -ne 0 ]; then

@@ -2,7 +2,7 @@
 """
 Generate QC HTML report for DWI preprocessing outputs.
 
-Currently implements:
+Currently implemented:
   - Noise map section (dwidenoise output)
   - Eddy QC section (eddy_quad)
   - Topup / susceptibility distortion correction QC
@@ -801,24 +801,14 @@ def brainmask_section(nodif_path, mask_path):
         nodif, nodif_img.header, mask, vmin, vmax
     )
 
-    mask_voxels = int(np.sum(mask > 0.5))
-    total_voxels = int(mask.size)
-    coverage_pct = 100 * mask_voxels / total_voxels if total_voxels else 0
+    # mask_voxels = int(np.sum(mask > 0.5))
+    # total_voxels = int(mask.size)
+    # coverage_pct = 100 * mask_voxels / total_voxels if total_voxels else 0
 
     return f"""
     <section id="brainmask" class="qc-section">
       <h2>Brain Mask</h2>
       <p class="qc-desc">Brain mask boundary overlaid on nodif (b0).</p>
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="stat-label">Mask Volume</div>
-          <div class="stat-value">{mask_voxels:,} vox</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Mask Coverage</div>
-          <div class="stat-value">{coverage_pct:.1f}%</div>
-        </div>
-      </div>
       <div class="slice-block">
         <img src="{img_uri}" class="mosaic" alt="brain mask overlay on nodif, axial/coronal/sagittal"/>
       </div>

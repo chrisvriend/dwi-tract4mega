@@ -53,6 +53,10 @@ mkdir -p "${outputdir}/params"
 # PARAMETER LISTS
 ########################################
 
+# NOTE: AcquisitionMatrixPE / ReconMatrixPE added here so dwi & fmap get them
+# too (previously only T1w had them). InplaneResolution is NOT read from the
+# json (it's computed from the NIfTI header, see get_inplane_resolution) but
+# is listed here in comments for reference; it's appended separately below.
 DWI_FMAP_PARAMS=(
   "CoilString"
   "MagneticFieldStrength"
@@ -74,6 +78,8 @@ DWI_FMAP_PARAMS=(
   "TotalReadoutTime"
   "PulseSequenceName"
   "ProtocolName"
+  "AcquisitionMatrixPE"
+  "ReconMatrixPE"
 )
 
 # FMAP_EXTRA_PARAMS=(
@@ -130,7 +136,68 @@ get_field_or_na() {
   fi
 }
 
-# Compact per-subject summary of exact b-values present, e.g. "b0=7, 1000=64, 2000=64"
+# Given a *.json sidecar path, find the matching *.nii.gz or *.nii image.
+find_nii_for_json() {
+  local json="$1"
+  local base="${json%.json}"
+  if [[ -f "${base}.nii.gz" ]]; then
+    echo "${base}.nii.gz"
+  elif [[ -f "${base}.nii" ]]; then
+    echo "${base}.nii"
+  else
+    echo ""
+  fi
+}
+
+# In-plane resolution isn't reliably present in the BIDS json sidecar, so
+# read it straight from the NIfTI-1 header (pixdim[1] x pixdim[2], the voxel
+# size along the two in-plane axes) using only python3's stdlib (struct +
+# gzip), so this works whether the image is .nii or .nii.gz and without
+# depending on nibabel/FSL being installed.
+get_inplane_resolution() {
+  local nii_file="$1"
+
+  if [[ -z "$nii_file" || ! -f "$nii_file" ]]; then
+    echo "NA"
+    return
+  fi
+
+  python3 - "$nii_file" 2>/dev/null << 'PYEOF'
+import sys, struct, gzip
+
+path = sys.argv[1]
+
+def read_header(p):
+    opener = gzip.open if p.endswith(".gz") else open
+    with opener(p, "rb") as f:
+        return f.read(348)
+
+def get_pixdim(data):
+    # NIfTI-1 header: sizeof_hdr (int32) must read as 348. Try both
+    # endiannesses since files can be written either way.
+    for endian in ("<", ">"):
+        if len(data) < 348:
+            continue
+        sizeof_hdr = struct.unpack(endian + "i", data[0:4])[0]
+        if sizeof_hdr == 348:
+            # pixdim is float32[8] starting at byte offset 76
+            return struct.unpack(endian + "8f", data[76:76 + 32])
+    return None
+
+try:
+    data = read_header(path)
+    pixdim = get_pixdim(data)
+    if pixdim is None:
+        print("NA")
+    else:
+        x, y = pixdim[1], pixdim[2]
+        print(f"{x:.4f}x{y:.4f}mm")
+except Exception:
+    print("NA")
+PYEOF
+}
+
+# Compact per-run summary of exact b-values present, e.g. "b0=7, 1000=64, 2000=64"
 get_bval_summary() {
   local dwi_json="$1"
   local bval_file="${dwi_json%.json}.bval"
@@ -164,7 +231,8 @@ get_bval_summary() {
 }
 
 # Logs every individual b-value (rounded) as its own row so the sample-wide
-# frequency summary/report shows exact counts, including b0, across all subjects.
+# frequency summary/report shows exact counts, including b0, across all
+# subjects AND all runs.
 log_bvals() {
   local dwi_json="$1"
   local bval_file="${dwi_json%.json}.bval"
@@ -193,6 +261,62 @@ log_param_value() {
 
   value="${value//$'\n'/ }"
   echo -e "${modality}\t${param}\t${value}" >> "${outputdir}/params/.param_values_tmp.tsv"
+}
+
+# Build a JSON array of per-run parameter objects for one modality.
+# Each element is tagged with the source filename so multiple runs
+# (e.g. dir-AP / dir-PA DWI, or multiple fmap runs) are kept distinct
+# rather than one silently overwriting/hiding the other.
+#
+# Args: modality_label  json_file_1 [json_file_2 ...]
+# Reads the param list from the global array named in $PARAM_LIST_NAME.
+build_modality_array() {
+  local modality="$1"; shift
+  local -n params_ref="$PARAM_LIST_NAME"
+  local files=("$@")
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "\"NA\""
+    return
+  fi
+
+  local arr="[" first=1
+  for f in "${files[@]}"; do
+    local -A p=()
+
+    for prm in "${params_ref[@]}"; do
+      val=$(get_field_or_na "$f" "$prm")
+      p["$prm"]="$val"
+      log_param_value "$modality" "$prm" "$val"
+    done
+
+    # InplaneResolution: not in the json, read from the paired NIfTI header.
+    nii_file="$(find_nii_for_json "$f")"
+    inplane="$(get_inplane_resolution "$nii_file")"
+    p["InplaneResolution"]="$inplane"
+    log_param_value "$modality" "InplaneResolution" "$inplane"
+
+    # DWI-specific: b-value shell breakdown.
+    if [[ "$modality" == "dwi" ]]; then
+      bval_summary=$(get_bval_summary "$f")
+      p["DiffusionScheme"]="$bval_summary"
+      log_param_value "dwi" "DiffusionScheme" "$bval_summary"
+      log_bvals "$f"
+    fi
+
+    entry="{\"file\": \"$(basename "$f")\""
+    for k in "${!p[@]}"; do
+      v="$(escape_json_string "${p[$k]}")"
+      entry+=", \"$k\": \"$v\""
+    done
+    entry+="}"
+
+    [[ $first -eq 0 ]] && arr+=", "
+    arr+="$entry"
+    first=0
+  done
+  arr+="]"
+  echo "$arr"
 }
 
 ########################################
@@ -226,95 +350,41 @@ find "$bidsdir" -maxdepth 1 -type d -name "sub-*" | sort | while read -r SUBDIR;
     FMAP_DIR="$SESDIR/fmap"
     T1W_DIR="$SESDIR/anat"
 
-    DWI_JSON="$(find "$DWI_DIR" -maxdepth 1 -type f -name "*_dwi.json" 2>/dev/null | sort | head -n 1)"
+    # Collect ALL matching sidecars, not just the first one alphabetically.
+    # This is what lets multiple DWI runs with opposite phase-encoding
+    # directions (e.g. dir-AP / dir-PA, or run-1 / run-2) each get their
+    # own entry instead of one silently shadowing the other.
+    DWI_JSONS=()
+    while IFS= read -r f; do DWI_JSONS+=("$f"); done < <(find "$DWI_DIR" -maxdepth 1 -type f -name "*_dwi.json" 2>/dev/null | sort)
 
-    FMAP_JSON=""
+    FMAP_JSONS=()
     if [[ -d "$FMAP_DIR" ]]; then
-      FMAP_JSON="$(find "$FMAP_DIR" -maxdepth 1 -type f -name "*_epi.json" 2>/dev/null | sort | head -n 1)"
+      while IFS= read -r f; do FMAP_JSONS+=("$f"); done < <(find "$FMAP_DIR" -maxdepth 1 -type f -name "*_epi.json" 2>/dev/null | sort)
     fi
 
-    T1W_JSON="$(find "$T1W_DIR" -maxdepth 1 -type f -name "*_T1w.json" 2>/dev/null | sort | head -n 1)"
+    T1W_JSONS=()
+    while IFS= read -r f; do T1W_JSONS+=("$f"); done < <(find "$T1W_DIR" -maxdepth 1 -type f -name "*_T1w.json" 2>/dev/null | sort)
 
-    # DWI params
-    declare -A dwi_params
-    for p in "${DWI_FMAP_PARAMS[@]}"; do
-      val=$(get_field_or_na "${DWI_JSON:-/dev/null}" "$p")
-      dwi_params["$p"]="$val"
-      log_param_value "dwi" "$p" "$val"
-    done
-
-    # b-value breakdown (per-subject compact string + individual rows for aggregate counting)
-    bval_summary=$(get_bval_summary "${DWI_JSON:-}")
-    dwi_params["DiffusionScheme"]="$bval_summary"
-    log_param_value "dwi" "DiffusionScheme" "$bval_summary"
-    log_bvals "${DWI_JSON:-}"
-
-    # fmap params
-    declare -A fmap_params
-    fmap_available=true
-    if [[ ! -d "$FMAP_DIR" || -z "$FMAP_JSON" ]]; then
-      fmap_available=false
-      if [[ -n "$SESSION_LABEL" ]]; then
-        log "$RED" "  No fmap data for ${SUBID} ${SESSION_LABEL}. Setting fmap to \"NA\" and skipping fmap parameters."
-      else
-        log "$RED" "  No fmap data for ${SUBID}. Setting fmap to \"NA\" and skipping fmap parameters."
-      fi
+    if [[ ${#DWI_JSONS[@]} -eq 0 ]]; then
+      log "$RED" "  No DWI data found for ${SUBID}${SESSION_LABEL:+ $SESSION_LABEL}."
+    elif [[ ${#DWI_JSONS[@]} -gt 1 ]]; then
+      log "$BLUE" "  Found ${#DWI_JSONS[@]} DWI runs for ${SUBID}${SESSION_LABEL:+ $SESSION_LABEL} (each logged separately)."
     fi
 
-    if $fmap_available; then
-      for p in "${DWI_FMAP_PARAMS[@]}"; do
-        val=$(get_field_or_na "${FMAP_JSON:-/dev/null}" "$p")
-        fmap_params["$p"]="$val"
-        log_param_value "fmap" "$p" "$val"
-      done
-      # for p in "${FMAP_EXTRA_PARAMS[@]}"; do
-      #   val=$(get_field_or_na "${FMAP_JSON:-/dev/null}" "$p")
-      #   fmap_params["$p"]="$val"
-      #   log_param_value "fmap" "$p" "$val"
-      # done
+    if [[ ${#FMAP_JSONS[@]} -eq 0 ]]; then
+      log "$RED" "  No fmap data for ${SUBID}${SESSION_LABEL:+ $SESSION_LABEL}. Setting fmap to \"NA\" and skipping fmap parameters."
+    elif [[ ${#FMAP_JSONS[@]} -gt 1 ]]; then
+      log "$BLUE" "  Found ${#FMAP_JSONS[@]} fmap runs for ${SUBID}${SESSION_LABEL:+ $SESSION_LABEL} (each logged separately)."
     fi
 
-    # T1w params
-    declare -A t1w_params
-    for p in "${T1W_PARAMS[@]}"; do
-      val=$(get_field_or_na "${T1W_JSON:-/dev/null}" "$p")
-      t1w_params["$p"]="$val"
-      log_param_value "T1w" "$p" "$val"
-    done
+    PARAM_LIST_NAME="DWI_FMAP_PARAMS"
+    dwi_json="$(build_modality_array "dwi" "${DWI_JSONS[@]}")"
 
-    # Build dwi JSON
-    dwi_json="{"; first=1
-    for k in "${!dwi_params[@]}"; do
-      v="$(escape_json_string "${dwi_params[$k]}")"
-      [[ $first -eq 0 ]] && dwi_json+=", "
-      dwi_json+="\"$k\": \"$v\""
-      first=0
-    done
-    dwi_json+="}"
+    PARAM_LIST_NAME="DWI_FMAP_PARAMS"
+    fmap_json="$(build_modality_array "fmap" "${FMAP_JSONS[@]}")"
 
-    # Build fmap JSON
-    if $fmap_available; then
-      fmap_json="{"; first=1
-      for k in "${!fmap_params[@]}"; do
-        v="$(escape_json_string "${fmap_params[$k]}")"
-        [[ $first -eq 0 ]] && fmap_json+=", "
-        fmap_json+="\"$k\": \"$v\""
-        first=0
-      done
-      fmap_json+="}"
-    else
-      fmap_json="\"NA\""
-    fi
-
-    # Build T1w JSON
-    t1w_json="{"; first=1
-    for k in "${!t1w_params[@]}"; do
-      v="$(escape_json_string "${t1w_params[$k]}")"
-      [[ $first -eq 0 ]] && t1w_json+=", "
-      t1w_json+="\"$k\": \"$v\""
-      first=0
-    done
-    t1w_json+="}"
+    PARAM_LIST_NAME="T1W_PARAMS"
+    t1w_json="$(build_modality_array "T1w" "${T1W_JSONS[@]}")"
 
     OUTPUT_JSON="{"
     OUTPUT_JSON+="\"subject\": \"${SUBID}\""
@@ -335,8 +405,6 @@ find "$bidsdir" -maxdepth 1 -type d -name "sub-*" | sort | while read -r SUBDIR;
     echo "$OUTPUT_JSON" | jq '.' > "$OUTFILE"
 
     log "$GREEN" "  Written: $OUTFILE"
-
-    unset dwi_params fmap_params t1w_params
   done
 done
 

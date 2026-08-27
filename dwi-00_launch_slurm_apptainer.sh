@@ -6,9 +6,12 @@
 
 #SBATCH --job-name=dwipipeline
 #SBATCH --partition=luna-cpu-long
+#SBATCH --partition=luna-cpu-long
 #SBATCH --cpus-per-task=1
 #SBATCH --qos=anw-cpu
+#SBATCH --qos=anw-cpu
 #SBATCH --mem=20M
+#SBATCH --time=12:00:00
 #SBATCH --time=12:00:00
 #SBATCH --nice=2000
 #SBATCH --output=%x_%A_%a.log
@@ -17,6 +20,8 @@
 
 set -euo pipefail
 
+#ml apptainer
+containerpath=/scratch/anw/cvriend/tractoprep-v1.0.6.sif
 #ml apptainer
 containerpath=/scratch/anw/cvriend/tractoprep-v1.0.6.sif
 

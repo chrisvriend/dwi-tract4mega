@@ -154,12 +154,28 @@ SELinux-enforcing hosts — omit it if not applicable.
 :::
 ::::
 
-- Make sure you have sufficient disk space for a workdir (scratch
-  space, deleted automatically after successful completion of a
-  subject) and an output dir.
+## Disk Space requirements
+- Make sure you have sufficient disk space for a workdir (1-2GB / subject).
+  subject-specific work directories are deleted automatically after successful completion the pipeline
+- dwi-preproc output ~ 500 MB - 1 GB / subject
+- dwi-tracto output ~ 1-2 GB / subject
+- freesurfer output ~ 500 MB / subject
+
+## Resource recommendations
+
+### dwi-preproc
+- `threads` : 8 - the pipeline automatically distributes these threads over the parallel eddy and anat2dwi (+ FreeSurfer) steps. (minimum = 2 threads)
+- `GB RAM` : 26 GB - FreeSurfer 8.2.0 is the bottleneck here. on systems with low memory 
+- `run time` : 6-8 hours with above settings (longer when `lowmem` is enabled in the spec.json file)
+
+### dwi-tracto
+- `threads` : 8-16
+- `GB RAM` : 4 GB
+- `run time` : 1-2 hours with above settings
 
 
-```{note}
-**Resource recommendations:** on SLURM clusters, ...
-*(fill in your site's SLURM resource recommendations here.)*
-```
+:::{note}
+Note that `run time` also depends on the CPU hardware, clockspeed, storage performance and system load.
+
+:::
+

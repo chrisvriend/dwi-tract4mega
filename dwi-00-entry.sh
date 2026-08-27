@@ -29,11 +29,6 @@ pipeline=$1
 specfile=$2
 scriptdir=/tracto
 
-# read spec.json file
-for key in $(jq -r 'keys[]' ${specfile}); do
-  value=$(jq -r --arg k "$key" '.[$k]' ${specfile})
-  declare "$key"="$value"
-done
 
 
 # check if all variables are non-empty
@@ -43,6 +38,12 @@ for var in pipeline specfile scriptdir; do
     exit 1
   fi
 done  
+
+# read spec.json file
+for key in $(jq -r 'keys[]' ${specfile}); do
+  value=$(jq -r --arg k "$key" '.[$k]' ${specfile})
+  declare "$key"="$value"
+done
 
 echo
 log "$BLUE" "------------------------"
@@ -73,11 +74,26 @@ case "$pipeline" in
     dwi-params)
         ${scriptdir}/dwi-extract_parameters.sh ${specfile}
     ;;
+    # commands not provided in usage info, but still available for internal use and in combination with SLURM arrays
+    dwi-prepare)
+        ${scriptdir}/dwi-02a-preproc_container.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -c ${scriptdir} -t ${nthreads} ${session:+-z ${session}}
+    ;;
+    dwi-eddy)
+        ${scriptdir}/dwi-02b-eddyCPUcontainer.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -c ${scriptdir} -t ${nthreads} -m ${eddy_method} ${session:+-z ${session}}
+    ;;
+    dwi-anat2dwi)
+        ${scriptdir}/dwi-03-anat2dwi_container.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -t ${nthreads} -f ${freesurferdir} ${session:+-z ${session}}
+    ;;
+    dwi-tractogram)
+        ${scriptdir}/dwi-04a-connectome_container.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -t ${nthreads} -x ${nstreamlines} ${session:+-z ${session}} 
+    ;;
+    dwi-conn)
+        ${scriptdir}/dwi-04b-tracts2conn_container.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -t ${nthreads} -x ${nstreamlines} ${session:+-z ${session}} 
+    ;;
     dtitk)
     :
     ;;
 esac
-
 
 
 

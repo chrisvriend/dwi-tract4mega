@@ -41,6 +41,8 @@ host_bidsdir=""
 host_outputdir=""
 host_workdir=""
 host_freesurferdir=""
+
+## preproc_only flag 0/1: if set, skip tractography stages
 preproc_only=0
 
 positional=()

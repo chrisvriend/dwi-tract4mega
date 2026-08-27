@@ -1165,8 +1165,7 @@ def tractography_section(tck_path, t1_path, max_streamlines=6000,
     subsample_note = ""
     if n_total > max_streamlines:
         subsample_note = f"""
-        <p class="qc-desc">Showing a random subsample of {max_streamlines:,} of
-        {n_total:,} streamlines for rendering performance.</p>
+        <p class="qc-desc">Showing a random subsample of {max_streamlines:,} streamlines for rendering performance.</p>
         """
 
     return f"""

@@ -2,6 +2,10 @@
 
 ---
 
+````{dropdown} Test DropDown
+This should collapse
+
+
 
 
 ```{admonition} `Usage: dwi-preproc|dwi-tracto <specfile>` and immediate exit

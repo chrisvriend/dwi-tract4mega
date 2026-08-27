@@ -3,20 +3,24 @@
 ---
 
 
-````{dropdown} `Error: Variable '<x>' is not set or is empty.`
-A required key is missing or empty in `spec.json`. Regenerate the file
-from `helpers/create_spec_template.sh` and check that every field is
-filled in and that key names exactly match (case-sensitive).
-````
 
+```{admonition} `Usage: dwi-preproc|dwi-tracto <specfile>` and immediate exit
+:class: dropdown
 
-````{dropdown} `Usage: dwi-preproc|dwi-tracto <specfile>` and immediate exit
 You didn't supply both the pipeline name and the specfile path as the two
 arguments to the entry point. The correct call is:
 
 ```bash
 dwi-preproc /spec/spec.json
 ```
+```
+
+
+
+````{dropdown} `Error: Variable '<x>' is not set or is empty.`
+A required key is missing or empty in `spec.json`. Regenerate the file
+from `helpers/create_spec_template.sh` and check that every field is
+filled in and that key names exactly match (case-sensitive).
 ````
 
 

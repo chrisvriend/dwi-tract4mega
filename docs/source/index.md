@@ -19,7 +19,7 @@ induced distortion correction.
 ````bash
 docker run --rm -v <bidsdir>:/bids -v <outputdir>:/output -v <workdir>:/work \
   -v <freesurferdir>:/freesurfer -v <path/to/spec.json>:/spec/spec.json \
-  cvriend/tractoprep:{{RELEASE_TAG}} <<pipeline>> /spec/spec.json
+  cvriend/tractoprep:{{RELEASE_TAG}} //pipeline// /spec/spec.json
 ````
 :::
 
@@ -27,7 +27,7 @@ docker run --rm -v <bidsdir>:/bids -v <outputdir>:/output -v <workdir>:/work \
 `````bash
 podman run --rm -v <bidsdir>:/bids -v <outputdir>:/output -v <workdir>:/work \
   -v <freesurferdir>:/freesurfer -v <path/to/spec.json>:/spec/spec.json \
-  cvriend/tractoprep:{{RELEASE_TAG}} <<pipeline>> /spec/spec.json
+  cvriend/tractoprep:{{RELEASE_TAG}} //pipeline// /spec/spec.json
 `````
 :::
 
@@ -39,7 +39,7 @@ apptainer run --cleanenv --bind \
       /host/path/to/work:/work, \
       /host/path/to/freesurfer:/freesurfer \
       /host/path/to/spec.json:/spec/spec.json
-      tractoprep_{{RELEASE_TAG}}.sif <<pipeline>> /spec/spec.json
+      tractoprep_{{RELEASE_TAG}}.sif //pipeline// /spec/spec.json
 `````
 :::
 ::::

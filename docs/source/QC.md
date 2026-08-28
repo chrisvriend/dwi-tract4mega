@@ -194,11 +194,11 @@ An interactive slider transitions between the T1w image and the nodif (b0) image
 :gutter: 3
 
 :::{grid-item-card} ✅ Correct registration
-![Correct registration](../_static/qc_coreg_correct.gif)
+![Correct registration](_static/qc_coreg_correct.gif)
 :::
 
 :::{grid-item-card} ❌ Incorrect registration
-![Incorrect registration](../_static/qc_coreg_incorrect.gif)
+![Incorrect registration](_static/qc_coreg_incorrect.gif)
 :::
 
 ::::

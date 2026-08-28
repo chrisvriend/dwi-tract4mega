@@ -192,17 +192,17 @@ An interactive slider transitions between the T1w image and the nodif (b0) image
 
 ::::{grid} 1
 :gutter: 3
+:class-container: sd-w-75
 
 :::{grid-item-card} ✅ Correct registration
-![Correct registration](_static/qc_coreg_correct.gif){w=100%}
+![Correct registration](../_static/qc_coreg_correct.gif){w=100%}
 :::
 
 :::{grid-item-card} ❌ Incorrect registration
-![Incorrect registration](_static/qc_coreg_incorrect.gif){w=100%}
+![Incorrect registration](../_static/qc_coreg_incorrect.gif){w=100%}
 :::
 
 ::::
-
 
 ---
 
@@ -218,9 +218,8 @@ Up to 20,000 randomly sampled streamlines are rendered as RGB-coloured lines (co
 - Sparse coverage or asymmetric tracking may indicate a masking, registration, or FOD estimation problem.
 
 ::::{grid} 1
-
+:::{grid-item-card} ✅ Correct tractogram
 ![Tractogram](_static/tractogram.png)
-
 ::::
 
 ---

@@ -171,10 +171,10 @@ The brain mask boundary is overlaid as a red contour on the nodif image in axial
 - The mask should tightly follow the brain boundary without large inclusions of non-brain tissue or missing brain regions.
 - Pay particular attention to frontal and temporal poles, cerebellum, and brainstem.
 
-```{todo}
-Add example figure: brain mask (red contour) overlaid on nodif b0 image.
-Place image at ``docs/source/_static/qc_brainmask_example.png`` and replace this block with a ``{figure}`` directive.
-```
+::::{grid} 1
+:::{grid-item-card} ✅ Correct brain masking
+![Tractogram](_static/brainmask.png)
+::::
 
 ---
 

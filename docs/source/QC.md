@@ -194,11 +194,11 @@ An interactive slider transitions between the T1w image and the nodif (b0) image
 :gutter: 3
 
 :::{grid-item-card} ✅ Correct registration
-![Correct registration](_static/qc_coreg_correct.gif)
+![Correct registration](_static/qc_coreg_correct.gif){w=100%}
 :::
 
 :::{grid-item-card} ❌ Incorrect registration
-![Incorrect registration](_static/qc_coreg_incorrect.gif)
+![Incorrect registration](_static/qc_coreg_incorrect.gif){w=100%}
 :::
 
 ::::
@@ -210,7 +210,7 @@ An interactive slider transitions between the T1w image and the nodif (b0) image
 
 **Source:** MRtrix3 whole-brain tractography (iFOD2)
 
-Up to 6,000 randomly sampled streamlines are rendered as RGB-coloured lines (coloured by local fibre orientation: R=left–right, G=anterior–posterior, B=superior–inferior) overlaid on a T1w MIP in axial, coronal, and sagittal views.
+Up to 20,000 randomly sampled streamlines are rendered as RGB-coloured lines (coloured by local fibre orientation: R=left–right, G=anterior–posterior, B=superior–inferior) overlaid on a T1w MIP in axial, coronal, and sagittal views.
 
 **What to check:**
 - Streamlines should cover the whole brain bilaterally.

@@ -217,6 +217,12 @@ Up to 6,000 randomly sampled streamlines are rendered as RGB-coloured lines (col
 - Major tracts (corpus callosum, corticospinal tract, arcuate fasciculus) should be visible.
 - Sparse coverage or asymmetric tracking may indicate a masking, registration, or FOD estimation problem.
 
+::::{grid} 1
+
+![Tractogram](_static/tractogram.png)
+
+::::
+
 ---
 
 ### 9. Connectivity Matrix

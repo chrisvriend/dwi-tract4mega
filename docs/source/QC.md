@@ -178,28 +178,7 @@ Place image at ``docs/source/_static/qc_brainmask_example.png`` and replace this
 
 ---
 
-### 6. Response Function Voxel Selection
-
-**Source:** MRtrix3 `dwi2response` (msmt_5tt algorithm)
-**Files:** `*_space-dwi_desc-response_voxels.nii.gz`
-
-Voxels selected for WM, GM, and CSF response function estimation are shown as colour-coded overlays (MIP projection) on the nodif image.
-
-| Tissue | Colour |
-|--------|--------|
-| White matter (WM) | Blue |
-| Grey matter (GM) | Orange |
-| CSF | Purple |
-
-**What to check:**
-- WM voxels should be concentrated in white matter regions (corpus callosum, corona radiata).
-- GM voxels should be in cortical grey matter.
-- CSF voxels should be in ventricles or sulci.
-- Very few selected voxels for any tissue class may indicate a registration or masking problem.
-
----
-
-### 7. T1–DWI Coregistration
+### 6. T1–DWI Coregistration
 
 **Source:** registration of FreeSurfer T1w to DWI space
 **Files:** `*_space-dwi_res-FS_desc-brain_T1w.nii.gz`, nodif template, optional `*_desc-5tt-hsvs_vis.nii.gz`
@@ -211,10 +190,19 @@ An interactive slider transitions between the T1w image and the nodif (b0) image
 - The 5tt overlay should show tissue boundaries (WM/GM/CSF) that are anatomically consistent with the DWI space.
 - Misalignment is most visible at the brain boundary, ventricles, and in deep structures.
 
-```{todo}
-Add example figure: T1w and nodif b0 side by side in DWI space.
-Place image at ``docs/source/_static/qc_coreg_example.png`` and replace this block with a ``{figure}`` directive.
-```
+::::{grid} 2
+:gutter: 3
+
+:::{grid-item-card} ✅ Correct registration
+![Correct registration](../_static/qc_coreg_correct.gif)
+:::
+
+:::{grid-item-card} ❌ Incorrect registration
+![Incorrect registration](../_static/qc_coreg_incorrect.gif)
+:::
+
+::::
+
 
 ---
 

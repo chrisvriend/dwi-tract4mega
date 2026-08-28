@@ -195,11 +195,11 @@ An interactive slider transitions between the T1w image and the nodif (b0) image
 :class-container: sd-w-75
 
 :::{grid-item-card} ✅ Correct registration
-![Correct registration](../_static/qc_coreg_correct.gif){w=100%}
+![Correct registration](_static/qc_coreg_correct.gif)
 :::
 
 :::{grid-item-card} ❌ Incorrect registration
-![Incorrect registration](../_static/qc_coreg_incorrect.gif){w=100%}
+![Incorrect registration](_static/qc_coreg_incorrect.gif)
 :::
 
 ::::

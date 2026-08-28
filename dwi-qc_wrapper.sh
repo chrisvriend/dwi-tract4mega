@@ -144,7 +144,7 @@ build_qc_args() {
     done
 
     # Always append output and subject options (no file checks)
-    qc_args+=( "--tract-max-streamlines 20000" "--output" "${outputdir}/dwi-preproc/${subj}${sessionfile}qc.html" "--subject" "${subj}-${session:-}" )
+    qc_args+=("--tract-max-streamlines" "20000" "--output" "${outputdir}/dwi-preproc/${subj}${sessionfile}qc.html" "--subject" "${subj}-${session:-}" )
 
     # Return via global array
     QC_ARGS=( "${qc_args[@]}" )

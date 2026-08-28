@@ -400,10 +400,10 @@ if [[ -d "${freesurferdir}/${subj}" && -f "${freesurferdir}/${subj}/scripts/T1w-
         fi 
 
         5ttgen hsvs "${workdir}/${subj}/freesurfer/${subj}" \
-            "${pref}5TThsvs.nii.gz" \
+            "${workdir}/${subj}/temp_5ttgen/${pref}5TThsvs.nii.gz" \
             -hippocampi aseg -thalami aseg -white_stem -nthreads "${nthreads}" \
             -nocrop -nocleanup -scratch "${workdir}/${subj}/temp_5ttgen" -force
-        rm "${pref}5TThsvs.nii.gz"
+        rm "${workdir}/${subj}/temp_5ttgen/${pref}5TThsvs.nii.gz"
         modify_5tt_hsvs "${workdir}/${subj}/temp_5ttgen" "${workdir}/${subj}/freesurfer/" "${subj}"
 
         mrgrid "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz" \
@@ -484,10 +484,10 @@ if [[ -d "${freesurferdir}/${subj}" && ! -f "${freesurferdir}/${subj}/scripts/T1
         if [[ ! -f "${workdir}/${subj}/anat/${subj}_res-FS_desc-5tt-hsvs_probseg.nii.gz" ]]; then
             log "$YELLOW" "Prepare 5TT estimation"
             5ttgen hsvs "${workdir}/${subj}/freesurfer/${subj}" \
-                "${subj}_5TThsvs.nii.gz" \
+                "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz" \
                 -hippocampi aseg -thalami aseg -white_stem -nthreads "${nthreads}" \
                 -nocrop -nocleanup -scratch "${workdir}/${subj}/temp_5ttgen" -force
-            rm "${subj}_5TThsvs.nii.gz"
+            rm "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz"
             modify_5tt_hsvs "${workdir}/${subj}/temp_5ttgen" "${workdir}/${subj}/freesurfer/" "${subj}"
             mv "${workdir}/${subj}/temp_5ttgen/${subj}_5TThsvs.nii.gz" \
                 "${workdir}/${subj}/anat/${subj}_res-FS_desc-5tt-hsvs_probseg.nii.gz"

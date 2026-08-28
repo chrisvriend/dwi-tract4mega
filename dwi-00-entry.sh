@@ -79,7 +79,7 @@ case "$pipeline" in
         ${scriptdir}/dwi-02a-preproc_container.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -c ${scriptdir} -t ${nthreads} ${session:+-z ${session}}
     ;;
     dwi-eddy)
-        ${scriptdir}/dwi-02b-eddyCPUcontainer.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -c ${scriptdir} -t ${nthreads} -m ${eddy_method} ${session:+-z ${session}}
+        ${scriptdir}/dwi-02b-eddyCPU_container.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -c ${scriptdir} -t ${nthreads} -m ${eddy_method} ${session:+-z ${session}}
     ;;
     dwi-anat2dwi)
         ${scriptdir}/dwi-03-anat2dwi_container.sh -i ${bidsdir} -o ${outputdir} -w ${workdir} -s ${subj} -t ${nthreads} -f ${freesurferdir} ${session:+-z ${session}}

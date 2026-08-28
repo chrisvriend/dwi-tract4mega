@@ -1,6 +1,6 @@
 # QC
 
-The per-subject HTML QC report is generated after running **dwi-qc**. This page describes what each section of the report contains and what to look for.
+The per-subject HTML QC report is generated when running **dwi-qc**. This page describes what each section of the report contains and what to look for.
 
 ---
 

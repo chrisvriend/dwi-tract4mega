@@ -190,7 +190,7 @@ An interactive slider transitions between the T1w image and the nodif (b0) image
 - The 5tt overlay should show tissue boundaries (WM/GM/CSF) that are anatomically consistent with the DWI space.
 - Misalignment is most visible at the brain boundary, ventricles, and in deep structures.
 
-::::{grid} 2
+::::{grid} 1
 :gutter: 3
 
 :::{grid-item-card} ✅ Correct registration
@@ -233,8 +233,16 @@ Up to 6,000 randomly sampled streamlines are rendered as RGB-coloured lines (col
 A heatmap of the normalised streamline connectivity matrix. A disconnected node check reports nodes with zero streamlines to or from all other nodes.
 
 **What to check:**
-- The matrix should show a structured pattern consistent with known brain connectivity (e.g., strong ipsilateral connections, bilateral homotopic connections).
+- The matrix should show a structured pattern consistent with known brain connectivity (e.g., strong ipsilateral connections (= brighter colors in upper left and lower right quadrant), bilateral homotopic connections (= visible as a fainter off-diagonal line)).
 - Disconnected nodes (shown in red) indicate parcellation regions that received no streamlines — this may reflect registration issues, a region outside the brain mask, or a region too small for the tractography algorithm.
+
+
+
+::::{grid} 1
+
+![ConnMatrix](_static/connmatrix.png)
+
+::::
 
 ---
 

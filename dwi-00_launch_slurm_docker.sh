@@ -5,9 +5,9 @@
 ########################
 
 #SBATCH --job-name=dwipipeline
-#SBATCH --partition=luna-cpu-long
+#SBATCH --partition=defq
 #SBATCH --cpus-per-task=1
-#SBATCH --qos=anw-cpu
+#SBATCH --qos=normal
 #SBATCH --mem=20M
 #SBATCH --time=12:00:00
 #SBATCH --nice=2000
@@ -17,14 +17,20 @@
 
 set -euo pipefail
 
-# Set  Docker image reference here
-containerimage="docker.io/yourorg/tractoprep:v1.0.6"
+# Set your Docker image reference here
+containerimage="docker.io/cvriend/tractoprep:v1.0.6"
 
-#ensure that the container image is available locally (pull if not; default memory specs might not be sufficient)
-if ! docker image exists "${containerimage}"; then
-    echo "Container image ${containerimage} not found locally. Attempting to pull..."
-    docker pull "${containerimage}" || { echo "Failed to pull container image ${containerimage}. Exiting."; exit 1; }
-fi
+run_user="$(id -u):$(id -g)"
+
+# Set to ":z" if your cluster enforces SELinux (Docker supports the same
+# volume relabeling suffixes as Podman). Leave empty otherwise.
+selinux_suffix=""
+
+# # ensure that the container image is available locally (pull if not; default memory specs might not be sufficient)
+# if ! docker image inspect "${containerimage}" >/dev/null 2>&1; then
+#     echo "Container image ${containerimage} not found locally. Attempting to pull..."
+#     docker pull "${containerimage}" || { echo "Failed to pull container image ${containerimage}. Exiting."; exit 1; }
+# fi
 
 
 Usage() {
@@ -48,6 +54,8 @@ host_bidsdir=""
 host_outputdir=""
 host_workdir=""
 host_freesurferdir=""
+
+## preproc_only flag 0/1: if set, skip tractography stages
 preproc_only=0
 
 positional=()
@@ -66,7 +74,7 @@ for arg in "$@"; do
   esac
 done
 
-if [[ ${#positional[@]} -lt 4 || ${#positional[@]} -gt 5 ]]; then
+if [[ ${#positional[@]} -ne 5 ]]; then
   Usage
 fi
 
@@ -149,10 +157,10 @@ logdir="${host_outputdir}/logs/${subj}${sessionpath}"
 mkdir -p "${logdir}"
 
 # Volume mounts: HOST path:CONTAINER path (container path comes from spec.json)
-# Docker uses --volume (or -v) instead of Apptainer's --bind
-# --user passes the current UID:GID so written files are owned by the invoking user
-volcmd="${host_bidsdir}:${bidsdir},${host_workdir}:${workdir},${host_outputdir}:${outputdir},${basedir}:${basedir},${host_freesurferdir}:${freesurferdir}"
-docker_user="$(id -u):$(id -g)"
+# The optional SELinux relabel suffix (":z") is appended when selinux_suffix is set.
+volcmd="${host_bidsdir}:${bidsdir}${selinux_suffix},${host_workdir}:${workdir}${selinux_suffix},${host_outputdir}:${outputdir}${selinux_suffix},${basedir}:${basedir}${selinux_suffix},${host_freesurferdir}:${freesurferdir}${selinux_suffix}"
+# Build a single-line string of -v flags
+volflags=$(echo "${volcmd}" | tr ',' '\n' | sed 's/^/-v /' | tr '\n' ' ')
 
 # ============================================================
 # Expected output files (used for skip-logic)
@@ -238,10 +246,10 @@ else
     cmd_02a="tmpdir_job=\"\${SLURM_TMPDIR:-${host_workdir}/tmp}/${subj}${sessionfile}\${SLURM_JOB_ID}\"; \
     mkdir -p \"\${tmpdir_job}\"; \
     docker run --rm \
-      --user ${docker_user} \
-      $(echo "${volcmd}" | tr ',' '\n' | sed 's/^/--volume /') \
-      --volume \"\${tmpdir_job}:/scratch\" \
-      --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch \
+      --pull=always --user=\"${run_user}\" \
+      ${volflags} \
+      --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch --env HOME=/tmp \
+      -v \"\${tmpdir_job}:/scratch\" \
       ${containerimage} dwi-prepare ${subjspecjson}"
 
     job_id_02a=$(submit_job "dwi-prepare_${subj}${sessionfile}" "${cmd_02a}" "" \
@@ -264,10 +272,10 @@ else
     cmd_02b="tmpdir_job=\"\${SLURM_TMPDIR:-${host_workdir}/tmp}/${subj}${sessionfile}\${SLURM_JOB_ID}\"; \
     mkdir -p \"\${tmpdir_job}\"; \
     docker run --rm \
-      --user ${docker_user} \
-      $(echo "${volcmd}" | tr ',' '\n' | sed 's/^/--volume /') \
-      --volume \"\${tmpdir_job}:/scratch\" \
-      --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch \
+      --pull=always --user=\"${run_user}\" \
+      ${volflags} \
+      --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch --env HOME=/tmp \
+      -v \"\${tmpdir_job}:/scratch\" \
       ${containerimage} dwi-eddy ${subjspecjson}"
 
     job_id_02b=$(submit_job "dwi-eddy_${subj}${sessionfile}" "${cmd_02b}" "${dep_02a}" \
@@ -284,10 +292,10 @@ else
     cmd_03="tmpdir_job=\"\${SLURM_TMPDIR:-${host_workdir}/tmp}/${subj}${sessionfile}\${SLURM_JOB_ID}\"; \
     mkdir -p \"\${tmpdir_job}\"; \
     docker run --rm \
-      --user ${docker_user} \
-      $(echo "${volcmd}" | tr ',' '\n' | sed 's/^/--volume /') \
-      --volume \"\${tmpdir_job}:/scratch\" \
-      --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch \
+      --pull=always --user=\"${run_user}\" \
+      ${volflags} \
+      --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch --env HOME=/tmp \
+      -v \"\${tmpdir_job}:/scratch\" \
       ${containerimage} dwi-anat2dwi ${subjspecjson}"
 
     job_id_03=$(submit_job "dwi-anat2dwi_${subj}${sessionfile}" "${cmd_03}" "${dep_02a}" \
@@ -303,8 +311,9 @@ fi
 dep_preproc=$(make_dep_string "${job_id_02b:-}" "${job_id_03:-}")
 
 cmd_qc_preproc="docker run --rm \
-  --user ${docker_user} \
-  $(echo "${volcmd}" | tr ',' '\n' | sed 's/^/--volume /') \
+  --pull=always --user=\"${run_user}\" \
+  ${volflags} \
+  --env HOME=/tmp \
   ${containerimage} dwi-qc ${subjspecjson}"
 job_id_qc_preproc=$(submit_job "dwi-qc-preproc_${subj}${sessionfile}" "${cmd_qc_preproc}" "${dep_preproc}" \
     "${QC_CPUS}" "${QC_MEM}" "${QC_TIME}")
@@ -331,10 +340,10 @@ else
         cmd_04a="tmpdir_job=\"\${SLURM_TMPDIR:-${host_workdir}/tmp}/${subj}${sessionfile}\${SLURM_JOB_ID}\"; \
         mkdir -p \"\${tmpdir_job}\"; \
         docker run --rm \
-          --user ${docker_user} \
-          $(echo "${volcmd}" | tr ',' '\n' | sed 's/^/--volume /') \
-          --volume \"\${tmpdir_job}:/scratch\" \
-          --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch \
+          --pull=always --user=\"${run_user}\" \
+          ${volflags} \
+          --env TMPDIR=/scratch --env TMP=/scratch --env TEMP=/scratch --env HOME=/tmp \
+          -v \"\${tmpdir_job}:/scratch\" \
           ${containerimage} dwi-tractogram ${subjspecjson}"
 
         job_id_04a=$(submit_job "dwi-tractogram_${subj}${sessionfile}" "${cmd_04a}" "${dep_04a}" \
@@ -353,8 +362,9 @@ else
         job_id_04b=""
     else
         cmd_04b="docker run --rm \
-          --user ${docker_user} \
-          $(echo "${volcmd}" | tr ',' '\n' | sed 's/^/--volume /') \
+          --pull=always --user=\"${run_user}\" \
+          ${volflags} \
+          --env HOME=/tmp \
           ${containerimage} dwi-conn ${subjspecjson}"
 
         job_id_04b=$(submit_job "dwi-conn_${subj}${sessionfile}" "${cmd_04b}" "${dep_04b}" \
@@ -369,8 +379,9 @@ else
     dep_tracto=$(make_dep_string "${job_id_04b:-}")
 
     cmd_qc_tracto="docker run --rm \
-      --user ${docker_user} \
-      $(echo "${volcmd}" | tr ',' '\n' | sed 's/^/--volume /') \
+      --pull=always --user=\"${run_user}\" \
+      ${volflags} \
+      --env HOME=/tmp \
       ${containerimage} dwi-qc ${subjspecjson}"
     job_id_qc_tracto=$(submit_job "dwi-qc-tracto_${subj}${sessionfile}" "${cmd_qc_tracto}" "${dep_tracto}" \
         "${QC_CPUS}" "${QC_MEM}" "${QC_TIME}")

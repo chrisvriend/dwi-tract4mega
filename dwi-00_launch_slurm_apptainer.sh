@@ -199,7 +199,7 @@ submit_job () {
         --time="${time}" \
         --mem="${mem}" \
         --cpus-per-task="${cpus}" \
-        --output="${logdir}/${jobname}_%j.log" \
+        --output="${logdir}/${jobname}%j.log" \
         "${dep_arg[@]}" \
         --wrap="${cmd}"
 }

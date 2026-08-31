@@ -52,7 +52,7 @@ for var in bidsdir outputdir scriptdir; do
     echo "Error: Variable '$var' is not set or is empty."
     exit 1
   fi
-done  
+done
 
 # if no atlas specified, default to 400P17N
 if [[ -z ${atlas} ]]; then
@@ -71,7 +71,27 @@ set_session_vars() {
     fi
 }
 
-# Helper: build argument list for generate_qc_report.py based on existing files
+# ---------------------------------------------------------------------------
+# Helper: resolve a glob pattern to its matches.
+# Prints nothing and returns 1 if no matches; prints matches and returns 0.
+# ---------------------------------------------------------------------------
+glob_matches() {
+    local pattern="$1"
+    shopt -s nullglob
+    local matches=( $pattern )   # unquoted — intentional glob expansion
+    shopt -u nullglob
+    if (( ${#matches[@]} == 0 )); then
+        return 1
+    fi
+    printf '%s\n' "${matches[@]}"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Helper: build argument list for generate_qc_report.py based on existing
+# files.  Multi-run aware: bval-check-bvals and noise may have dir-* variants;
+# all matching files are passed so the Python script can show one panel per run.
+# ---------------------------------------------------------------------------
 build_qc_args() {
     local subj="$1"
     local session="$2"
@@ -81,13 +101,54 @@ build_qc_args() {
 
     local qc_args=()
 
-    # Define all candidate files and their corresponding flags
-    # Format: "flag|full_path"
+    # ------------------------------------------------------------------
+    # bval-check-bvals — single-run: sub-XX_ses-YY_dwi.bval
+    #                    multi-run:  sub-XX_ses-YY_dir-*_dwi.bval
+    # Pass ALL matching bval files; generate_qc_report.py accepts nargs='+'.
+    # ------------------------------------------------------------------
+    local bval_single="${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval"
+    local bval_glob="${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dir-*_dwi.bval"
+
+    if [[ -f "${bval_single}" ]]; then
+        qc_args+=( "--bval-check-bvals" "${bval_single}" )
+    else
+        shopt -s nullglob
+        local bval_matches=( ${bval_glob} )
+        shopt -u nullglob
+        if (( ${#bval_matches[@]} > 0 )); then
+            qc_args+=( "--bval-check-bvals" "${bval_matches[@]}" )
+        else
+            log "$BLUE" "Skipping --bval-check-bvals: no bval file(s) found"
+        fi
+    fi
+
+    # ------------------------------------------------------------------
+    # noise — single-run: sub-XX_ses-YY_space-dwi_desc-noise_dwi.nii.gz
+    #         multi-run:  sub-XX_ses-YY_dir-*_space-dwi_desc-noise_dwi.nii.gz
+    # Pass ALL matching noise maps; generate_qc_report.py accepts nargs='+'.
+    # ------------------------------------------------------------------
+    local noise_single="${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz"
+    local noise_glob="${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}dir-*_space-dwi_desc-noise_dwi.nii.gz"
+
+    if [[ -f "${noise_single}" ]]; then
+        qc_args+=( "--noise" "${noise_single}" )
+    else
+        shopt -s nullglob
+        local noise_matches=( ${noise_glob} )
+        shopt -u nullglob
+        if (( ${#noise_matches[@]} > 0 )); then
+            qc_args+=( "--noise" "${noise_matches[@]}" )
+        else
+            log "$BLUE" "Skipping --noise: no noise map file(s) found"
+        fi
+    fi
+
+    # ------------------------------------------------------------------
+    # Remaining entries — single-file flags (wildcard-expanded where needed)
+    # Format: "flag|full_path"   (use glob patterns where dir-* may appear)
+    # ------------------------------------------------------------------
     local entries=(
-        # bvals check
-        "bval-check-bvals|${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.bval"
-        "noise|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz"
-         # topup
+        # topup
         "topup-before|${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-*_space-dwi_desc-4topup_epi.nii.gz"
         "topup-after|${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/${subj}${sessionfile}space-dwi_desc-unwarped_epi.nii.gz"
         "topup-acqparams|${outputdir}/dwi-preproc/${subj}${sessionpath}fmap/${subj}${sessionfile}dir-*_desc-refparams.tsv"
@@ -103,13 +164,10 @@ build_qc_args() {
         # brain masks
         "brainmask-nodif|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif_dwi.nii.gz"
         "brainmask-mask|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-brain_mask.nii.gz"
-        # registraion outputs 
+        # registration outputs
         "reg-t1w-dwi|${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-FS_desc-brain_T1w.nii.gz"
         "reg-nodif|${outputdir}/dwi-preproc/${subj}${sessionpath}anat/${subj}${sessionfile}space-dwi_res-high_template.nii.gz"
         "reg-5ttvis|${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_res-high_desc-5tt-hsvs_vis.nii.gz"
-        # response voxels (unclear)
-        # "response-voxels|${outputdir}/dwi-tracto/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-response_voxels.nii.gz"
-        # "response-underlay|${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-nodif-brain_dwi.nii.gz"
         # tractography outputs
         "tract-tck|${outputdir}/dwi-tracto/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_tracto-100k.tck"
         "connectivity-matrix|${outputdir}/dwi-tracto/${subj}${sessionpath}conn/${subj}${sessionfile}atlas-${atlas}_desc-streams_connmatrix.csv"

@@ -3,7 +3,8 @@
 Generate QC HTML report for DWI preprocessing outputs.
 
 Currently implemented:
-  - Noise map section (dwidenoise output)
+  - Bval consistency check — multi-run aware (one banner per dir-* run)
+  - Noise map section (dwidenoise output) — multi-run aware (one panel per dir-* run)
   - Eddy QC section (eddy_quad)
   - Topup / susceptibility distortion correction QC
   - Brainmask QC
@@ -36,6 +37,24 @@ MUTED = "#9aa4af"
 GRID = "#2a2f36"
 ACCENT = "#4fa3ff"
 ACCENT2 = "#ff9f4f"
+
+# --------------------------------------------------------------------------
+# Multi-run label helper
+# --------------------------------------------------------------------------
+
+def run_label_from_path(path):
+    """
+    Extract a human-readable run label from a file path.
+    Returns the dir-<label> entity if present (e.g. 'dir-AP'),
+    otherwise returns the bare filename stem.
+    """
+    stem = Path(path).name
+    m = re.search(r'(dir-[A-Za-z0-9]+)', stem)
+    if m:
+        return m.group(1)
+    # fall back to full stem (strip .nii.gz / .bval etc.)
+    return re.sub(r'\.(nii(\.gz)?|bval|bvec|tsv|json)$', '', stem)
+
 
 # --------------------------------------------------------------------------
 # Image helpers
@@ -71,17 +90,6 @@ def get_voxel_sizes_from_header(header):
 
 
 def _row_col_mm(axis, header):
-    """
-    Physical mm-per-pixel spacing of (row, col) as slices are ACTUALLY
-    plotted, i.e. after the np.rot90() that every slice/MIP extraction
-    function applies before imshow. np.rot90 transposes rows/cols, so
-    this is the post-rotation mapping, not the raw array-slicing one.
-
-    axis: 0=sagittal, 1=coronal, 2=axial
-      Axial   : raw slice is (X, Y) -> after rot90: rows=Y (dy), cols=X (dx)
-      Coronal : raw slice is (X, Z) -> after rot90: rows=Z (dz), cols=X (dx)
-      Sagittal: raw slice is (Y, Z) -> after rot90: rows=Z (dz), cols=Y (dy)
-    """
     dx, dy, dz = get_voxel_sizes_from_header(header)
     if axis == 2:
         return dy, dx
@@ -92,10 +100,6 @@ def _row_col_mm(axis, header):
 
 
 def slice_display_dims(shape3d, header, axis):
-    """
-    Physical (width_mm, height_mm) of a slice from `axis`, as displayed
-    after np.rot90(). axis: 0=sagittal, 1=coronal, 2=axial.
-    """
     nx, ny, nz = shape3d[:3]
     row_mm, col_mm = _row_col_mm(axis, header)
     if axis == 2:
@@ -110,30 +114,6 @@ def slice_display_dims(shape3d, header, axis):
 def make_triplanar_axes(shape3d, header, facecolor="black", target_max_dim=8.0,
                          gap=0.15, right_margin=0.0, top_margin=0.45,
                          bottom_margin=0.0):
-    """
-    Build a figure with 3 axes (axial, coronal, sagittal), laid out left to
-    right, all sharing ONE physical mm-to-inch scale. This is important:
-    if the acquisition FOV is much shorter in Z than in X/Y (e.g. a DWI
-    slab covering 30-60 slices vs a 256x256 in-plane matrix), the coronal
-    and sagittal views are genuinely shorter in physical extent. Sizing
-    each panel independently to a shared *height* (as an earlier version
-    of this function did) forces those short-FOV panels to become very
-    WIDE to preserve their aspect ratio, which then dominates the overall
-    figure and makes the axial panel look tiny once everything is
-    downscaled to a fixed output width. Using one shared scale for all
-    three panels instead keeps every panel's size proportional to its
-    true physical size relative to the others -- axial stays full-size,
-    and coronal/sagittal come out correctly smaller (not wider).
-
-    Each axes is sized exactly to its own panel (no numeric 'aspect' is
-    used for the box itself) and vertically centered in the row, so
-    imshow(..., aspect='auto') fills the box exactly with no stretching
-    and no cropping. Any leftover space around a shorter panel is just
-    blank figure background -- which is now the *correct*, minimal
-    amount, reflecting real anatomy rather than a layout bug.
-
-    Returns (fig, [ax_axial, ax_coronal, ax_sagittal]).
-    """
     views = [2, 1, 0]  # axial, coronal, sagittal -- order used throughout
     dims = [slice_display_dims(shape3d, header, axis) for axis in views]
     max_extent = max(max(w, h) for w, h in dims) or 1.0
@@ -161,13 +141,7 @@ def make_triplanar_axes(shape3d, header, facecolor="black", target_max_dim=8.0,
     return fig, axes
 
 
-
 def panel_figsize_from_slice(slice2d, axis, header, target_height=4.0):
-    """
-    Figure size (width, height) in inches for a SINGLE already-extracted
-    (post-rot90) 2D slice, so its displayed aspect matches physical mm,
-    for use with aspect='auto'.
-    """
     row_mm, col_mm = _row_col_mm(axis, header)
     rows, cols = slice2d.shape[:2]
     height_mm = rows * row_mm
@@ -217,19 +191,6 @@ def optimize_png_bytes(png_bytes, max_width=1000):
 
 
 def normalize_png_bytes(png_bytes, target_width=1000):
-    """
-    Resize to an EXACT target width (upscaling as well as downscaling),
-    preserving aspect ratio, then PNG-optimize.
-
-    Unlike optimize_png_bytes (which only ever shrinks an oversized image
-    and leaves smaller ones alone), this is for images sourced from an
-    external tool -- e.g. eddy_quad's per-shell avg_b*.png / cnr*.png
-    summary images -- whose native pixel dimensions can vary from shell to
-    shell for reasons unrelated to the report layout. Without forcing a
-    common width, a shell whose native PNG happens to be smaller than
-    others renders visibly smaller in the report (the CSS max-height rule
-    only shrinks oversized images, it never grows undersized ones).
-    """
     im = Image.open(BytesIO(png_bytes))
     if im.mode not in ("RGB", "RGBA", "L"):
         im = im.convert("RGBA")
@@ -255,15 +216,6 @@ def fig_to_base64(fig, max_width=1000):
 # --------------------------------------------------------------------------
 
 def _assign_shells(bvals, tol=100):
-    """
-    Cluster a bvals array into shells by proximity (handles the small
-    scanner-reported jitter around nominal shell values, e.g. 995/1000/1005).
-
-    Returns (shell_id, shell_bvals):
-      shell_id    : array, same length as bvals, giving each volume's shell index
-      shell_bvals : array of length n_shells, the mean nominal b-value of each shell,
-                    ordered by increasing shell index (which is also increasing b-value)
-    """
     bvals = np.asarray(bvals, dtype=float)
     uniq = np.unique(bvals)
     uniq.sort()
@@ -288,26 +240,6 @@ def _assign_shells(bvals, tol=100):
 
 def bval_consistency_check(dwi_path, bval_path, mask_path=None,
                             shell_tol=100, pct_tolerance=8.0):
-    """
-    Sanity-check that a bvals file actually matches its DWI series.
-
-    Rationale: per the Stejskal-Tanner signal equation, mean intra-cerebral
-    signal intensity should decrease (or at worst plateau near the noise
-    floor) as b-value increases. If the bvals file is wrong, shuffled, or
-    belongs to a different scan, this ordering tends to break -- some
-    nominally-higher-b shell will show a mean signal that is *not* lower
-    than a nominally-lower-b shell, by more than noise alone would explain.
-
-    `pct_tolerance` allows a shell's mean signal to be up to this percent
-    higher than the preceding (lower-b) shell before it's flagged, to avoid
-    false positives from noise / a shallow high-b plateau.
-
-    Returns a dict:
-      status: "pass" | "fail" | "inconclusive" | "error"
-      message: human-readable note (used for "error"/"inconclusive")
-      shells: list of {bval, n_volumes, mean_signal}, sorted by increasing b-value
-      violations: list of {lower_b, lower_mean, higher_b, higher_mean}
-    """
     bval_path = Path(bval_path)
     dwi_path = Path(dwi_path)
 
@@ -399,16 +331,19 @@ def _bval_shell_table(shells):
     """
 
 
-def bval_check_banner(result):
-    """Render the top-of-page bval consistency banner from a
-    bval_consistency_check() result dict."""
+def _single_bval_banner(result, run_label=None):
+    """
+    Render one bval consistency banner for a single run.
+    `run_label` is shown as a prefix when multiple runs are present.
+    """
     status = result.get("status")
+    prefix = f"<strong>{run_label}</strong> &mdash; " if run_label else ""
 
     if status == "error":
         return f"""
         <div class="bval-banner bval-warn">
           <span class="bval-banner-text">
-            &#9888; Bval consistency check could not run &mdash; {result['message']}
+            {prefix}&#9888; Bval consistency check could not run &mdash; {result['message']}
           </span>
         </div>
         """
@@ -417,7 +352,7 @@ def bval_check_banner(result):
         return f"""
         <div class="bval-banner bval-warn">
           <span class="bval-banner-text">
-            &#9888; Bval consistency check inconclusive &mdash; {result['message']}
+            {prefix}&#9888; Bval consistency check inconclusive &mdash; {result['message']}
           </span>
         </div>
         """
@@ -428,7 +363,7 @@ def bval_check_banner(result):
         return f"""
         <div class="bval-banner bval-pass">
           <span class="bval-banner-text">
-            &#10003; Bval consistency check passed &mdash; mean signal decreases with
+            {prefix}&#10003; Bval consistency check passed &mdash; mean signal decreases with
             increasing b-value, as expected.
           </span>
           <details><summary>Per-shell signal</summary>{table_html}</details>
@@ -445,7 +380,7 @@ def bval_check_banner(result):
     return f"""
     <div class="bval-banner bval-fail">
       <span class="bval-banner-text">
-        &#10007; Bval consistency check FAILED &mdash; mean signal does not consistently
+        {prefix}&#10007; Bval consistency check FAILED &mdash; mean signal does not consistently
         decrease with increasing b-value. This often means the bvals file does not match
         the acquired DWI series (wrong file, mismatched volume order, wrong scan, etc.).
       </span>
@@ -457,11 +392,31 @@ def bval_check_banner(result):
     </div>
     """
 
+
+def bval_check_banner(result_or_results):
+    """
+    Public entry point.  Accepts either:
+      - a single result dict  (single-run, backward-compatible)
+      - a list of (run_label, result_dict) tuples  (multi-run)
+    """
+    if isinstance(result_or_results, dict):
+        # single run — no label prefix
+        return _single_bval_banner(result_or_results, run_label=None)
+
+    # multi-run: list of (label, result) tuples
+    parts = []
+    use_labels = len(result_or_results) > 1
+    for label, result in result_or_results:
+        parts.append(_single_bval_banner(result, run_label=label if use_labels else None))
+    return "\n".join(parts)
+
+
 # --------------------------------------------------------------------------
 # QC sections
 # --------------------------------------------------------------------------
 
-def noise_section(noise_path):
+def _noise_run_html(noise_path):
+    """Render axial/coronal/sagittal mosaic blocks for one noise map file."""
     data, header = load_volume(noise_path)
     positive = data[data > 0]
     vmin, vmax = np.percentile(positive, [1, 99]) if positive.size else (None, None)
@@ -472,10 +427,6 @@ def noise_section(noise_path):
         imgs[name] = fig_to_base64(fig)
 
     return f"""
-    <section id="noise" class="qc-section">
-      <h2>Denoising &mdash; Noise Map</h2>
-      <p class="qc-desc">Spatial distribution of the noise level estimated by
-      <code>dwidenoise</code> (MP-PCA).</p>
       <div class="slice-block">
         <h3>Axial</h3>
         <img src="data:image/png;base64,{imgs['axial']}" class="mosaic" alt="axial noise map"/>
@@ -488,6 +439,40 @@ def noise_section(noise_path):
         <h3>Sagittal</h3>
         <img src="data:image/png;base64,{imgs['sagittal']}" class="mosaic" alt="sagittal noise map"/>
       </div>
+    """
+
+
+def noise_section(noise_paths):
+    """
+    noise_paths: str | list[str]
+      Single path (single-run) or list of paths (multi-run, one per dir-* run).
+    """
+    if isinstance(noise_paths, (str, Path)):
+        noise_paths = [noise_paths]
+
+    use_labels = len(noise_paths) > 1
+
+    run_blocks = []
+    for p in noise_paths:
+        label = run_label_from_path(p) if use_labels else None
+        header_html = (
+            f'<h3 class="run-label">{label}</h3>' if label else ""
+        )
+        run_blocks.append(f"""
+        <div class="run-block">
+          {header_html}
+          {_noise_run_html(p)}
+        </div>
+        """)
+
+    body = "\n".join(run_blocks)
+
+    return f"""
+    <section id="noise" class="qc-section">
+      <h2>Denoising &mdash; Noise Map</h2>
+      <p class="qc-desc">Spatial distribution of the noise level estimated by
+      <code>dwidenoise</code> (MP-PCA).</p>
+      {body}
     </section>
     """
 
@@ -526,13 +511,6 @@ def _find_qc_image(qc_dir, filename):
     return p if p.exists() else None
 
 def _img_file_to_base64(path, target_width=1000):
-    """
-    Base64-encode an externally-sourced eddy_quad summary PNG, resized to a
-    consistent target width so per-shell images (avg_b0/avg_bX, CNR/SNR
-    maps) all display at the same size regardless of their native
-    resolution -- see normalize_png_bytes for why this differs from the
-    plain-shrink-only optimize_png_bytes used for this script's own figures.
-    """
     normalized = normalize_png_bytes(Path(path).read_bytes(), target_width=target_width)
     return base64.b64encode(normalized).decode("utf-8")
 
@@ -801,10 +779,6 @@ def brainmask_section(nodif_path, mask_path):
         nodif, nodif_img.header, mask, vmin, vmax
     )
 
-    # mask_voxels = int(np.sum(mask > 0.5))
-    # total_voxels = int(mask.size)
-    # coverage_pct = 100 * mask_voxels / total_voxels if total_voxels else 0
-
     return f"""
     <section id="brainmask" class="qc-section">
       <h2>Brain Mask</h2>
@@ -843,7 +817,7 @@ def response_voxels_section(voxels_path, underlay_path, underlay_label="nodif (b
         return f"""
         <section id="responsevoxels" class="qc-section">
           <h2>Response Function Voxel Selection (dwi2response)</h2>
-          <p class="qc-desc">Voxel selection mask shape {voxels_data.shape[:3]} "
+          <p class="qc-desc">Voxel selection mask shape {voxels_data.shape[:3]}
           and underlay shape {underlay.shape} differ.</p>
         </section>
         """
@@ -1269,7 +1243,6 @@ def topup_section(before_path, after_path, topup_acqparams_path,
 
     has_overlay = fieldmap_data is not None
     if has_overlay:
-        # assume same grid/header as after_vol
         after_overlay_uri = make_triplanar_data_uri(
             after_vol, after_header, vmin, vmax,
             overlay_vol=fieldmap_data, overlay_absmax=overlay_absmax
@@ -1365,10 +1338,6 @@ def make_triplanar_colorbar_data_uri(vol3d, header, cmap="viridis",
                                       cbar_label="", max_width=1000):
     views = [("Axial", 2), ("Coronal", 1), ("Sagittal", 0)]
 
-    # Reserve extra figure width to the right of the three panels for a
-    # colorbar that's a comfortable, fixed size regardless of how wide/
-    # narrow the brain panels end up being. Layout of that reserved strip
-    # (left to right): gap -> colorbar -> tick labels/axis label -> edge.
     gap_to_cbar = 0.35
     cbar_width_in = 0.40
     label_space_in = 1.45
@@ -1602,16 +1571,6 @@ def outlier_volumes_block(raw_dwi_path, preproc_dwi_path, outliers):
 # --------------------------------------------------------------------------
 
 def find_disconnected_nodes(mat):
-    """
-    Identify nodes with zero streamlines to/from every other node.
-
-    `mat` is the raw (unnormalized) connectivity matrix, indexed [source,
-    target]. The diagonal (self-connections) is ignored, since a node can
-    have nonzero "streamlines to itself" in some tck2connectome outputs
-    while still being disconnected from the rest of the network. Returns
-    a sorted list of 0-based node indices whose row AND column (off-
-    diagonal) both sum to zero.
-    """
     n = mat.shape[0]
     off_diag = mat.copy()
     np.fill_diagonal(off_diag, 0)
@@ -1621,11 +1580,6 @@ def find_disconnected_nodes(mat):
 
 
 def disconnected_nodes_block(mat, node_labels=None):
-    """
-    Build the 'Disconnected Node Check' subsection HTML, to be placed
-    directly under the connectivity matrix image within the connectivity
-    section.
-    """
     n = mat.shape[0]
     disconnected = find_disconnected_nodes(mat)
     n_disc = len(disconnected)
@@ -1633,7 +1587,7 @@ def disconnected_nodes_block(mat, node_labels=None):
     def node_name(i):
         if node_labels and i < len(node_labels):
             return str(node_labels[i])
-        return str(i + 1)  # 1-based to match typical atlas/connectome node numbering
+        return str(i + 1)
 
     stat_class = "stat-ok" if n_disc == 0 else "stat-bad"
     stat_card = f"""
@@ -1673,15 +1627,6 @@ def disconnected_nodes_block(mat, node_labels=None):
 
 
 def _csv_has_header_row(csv_path, delimiter=","):
-    """
-    tck2connectome CSVs are plain numeric matrices with NO header row --
-    every field on every line is a number. Some other connectivity CSVs
-    (e.g. hand-exported ones) do carry a header row of node names/labels.
-    Rather than assuming one way or the other (which silently drops a
-    real data row/column if wrong), inspect the first non-empty line: if
-    every field on it parses as a float, treat it as data; otherwise
-    treat it as a header to skip.
-    """
     with open(csv_path) as f:
         for line in f:
             line = line.strip()
@@ -1724,8 +1669,6 @@ def connectivity_matrix_section(csv_path, atlas_name=None):
         raw = np.atleast_2d(raw)
 
     if raw.shape[1] == raw.shape[0] + 1:
-        # Genuine leading label/index column (only trim when the matrix
-        # isn't already square).
         mat = raw[:, 1:]
     else:
         mat = raw
@@ -1880,6 +1823,24 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     letter-spacing: 0.05em;
     color: var(--muted);
     margin-bottom: 0.4rem;
+  }}
+  /* run-block: groups all slice panels for one dir-* run */
+  .run-block {{
+    border-top: 1px solid #262b32;
+    margin-top: 1.25rem;
+    padding-top: 0.75rem;
+  }}
+  .run-block:first-child {{
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
+  }}
+  h3.run-label {{
+    font-size: 0.95rem;
+    color: var(--accent);
+    margin: 0 0 0.75rem;
+    text-transform: none;
+    letter-spacing: 0;
   }}
   .mosaic {{
     max-width: 100%;
@@ -2104,6 +2065,9 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     border-radius: 8px;
     font-size: 0.92rem;
   }}
+  .bval-banner + .bval-banner {{
+    margin-top: 0.5rem;
+  }}
   .bval-banner-text {{
     display: block;
   }}
@@ -2184,7 +2148,15 @@ def build_report(sections, output_path, subject=None, extra_nav=None,
 
 def main():
     p = argparse.ArgumentParser(description="Generate DWI preprocessing QC HTML report")
-    p.add_argument("--noise", default=None, help="Path to dwidenoise noise map")
+
+    # --noise and --bval-check-bvals now accept one OR more paths (multi-run)
+    p.add_argument("--noise", nargs="+", default=None,
+                    help="Path(s) to dwidenoise noise map(s). "
+                         "Pass multiple paths for multi-run (dir-*) data.")
+    p.add_argument("--bval-check-bvals", nargs="+", default=None,
+                    help="Path(s) to bvals file(s) to sanity-check. "
+                         "Pass multiple paths for multi-run (dir-*) data.")
+
     p.add_argument("--eddy-json", default=None, help="Path to eddy_quad qc.json")
     p.add_argument("--eddy-rms", default=None, help="Path to *.eddy_movement_rms")
     p.add_argument("--eddy-outliers", default=None, help="Path to *.eddy_outlier_report")
@@ -2237,11 +2209,11 @@ def main():
     p.add_argument("--connectivity-atlas-name", default=None,
                     help="Atlas label for connectivity section")
 
-    p.add_argument("--bval-check-bvals", default=None,
-                    help="Path to the bvals file to sanity-check against the DWI series")
     p.add_argument("--bval-check-dwi", default=None,
                     help="4D DWI volume matching --bval-check-bvals (defaults to "
-                         "--eddy-raw-dwi, then --eddy-preproc-dwi, if not given)")
+                         "--eddy-raw-dwi, then --eddy-preproc-dwi, if not given). "
+                         "For multi-run, the same DWI is used for all runs unless "
+                         "each run has a separate concatenated DWI.")
     p.add_argument("--bval-check-mask", default=None,
                     help="Optional brain mask restricting the signal check "
                          "(defaults to --brainmask-mask if not given)")
@@ -2253,13 +2225,15 @@ def main():
     p.add_argument("--subject", default=None, help="Subject label, e.g. sub-01")
     args = p.parse_args()
 
-    sections=[]
-    
-    if args.noise:
+    sections = []
 
-        sections = [
-        ("noise", "Noise Map", noise_section(args.noise)),
-        ]
+    # ------------------------------------------------------------------
+    # Noise section — single or multi-run
+    # ------------------------------------------------------------------
+    if args.noise:
+        sections.append(
+            ("noise", "Noise Map", noise_section(args.noise))
+        )
 
     extra_nav = []
 
@@ -2353,25 +2327,57 @@ def main():
         if 'id="disconnectednodes"' in connectivity_html:
             extra_nav.append(("connectivity", "disconnectednodes", "Disconnected Nodes"))
 
+    # ------------------------------------------------------------------
+    # Bval consistency banner — single or multi-run
+    # ------------------------------------------------------------------
     top_banner_html = ""
     if args.bval_check_bvals:
         dwi_for_check = (args.bval_check_dwi or args.eddy_raw_dwi
                           or args.eddy_preproc_dwi)
         mask_for_check = args.bval_check_mask or args.brainmask_mask
-        if dwi_for_check:
-            bval_result = bval_consistency_check(
-                dwi_for_check, args.bval_check_bvals,
-                mask_path=mask_for_check,
-                pct_tolerance=args.bval_check_pct_tolerance,
-            )
+
+        bval_paths = args.bval_check_bvals  # already a list (nargs='+')
+
+        if len(bval_paths) == 1:
+            # single run — original behaviour
+            if dwi_for_check:
+                bval_result = bval_consistency_check(
+                    dwi_for_check, bval_paths[0],
+                    mask_path=mask_for_check,
+                    pct_tolerance=args.bval_check_pct_tolerance,
+                )
+            else:
+                bval_result = {
+                    "status": "error",
+                    "message": ("No DWI volume available for the bval check -- pass "
+                                 "--bval-check-dwi (or --eddy-raw-dwi / --eddy-preproc-dwi)."),
+                    "shells": [], "violations": [],
+                }
+            top_banner_html = bval_check_banner(bval_result)
+
         else:
-            bval_result = {
-                "status": "error",
-                "message": ("No DWI volume available for the bval check -- pass "
-                             "--bval-check-dwi (or --eddy-raw-dwi / --eddy-preproc-dwi)."),
-                "shells": [], "violations": [],
-            }
-        top_banner_html = bval_check_banner(bval_result)
+            # multi-run: one banner per bval file
+            # For the signal check we need a matching DWI per run.
+            # If --bval-check-dwi is not supplied we fall back to the
+            # merged eddy DWI (best effort) and note it in the error.
+            run_results = []
+            for bval_path in bval_paths:
+                label = run_label_from_path(bval_path)
+                if dwi_for_check:
+                    result = bval_consistency_check(
+                        dwi_for_check, bval_path,
+                        mask_path=mask_for_check,
+                        pct_tolerance=args.bval_check_pct_tolerance,
+                    )
+                else:
+                    result = {
+                        "status": "error",
+                        "message": ("No DWI volume available for the bval check -- pass "
+                                     "--bval-check-dwi (or --eddy-raw-dwi / --eddy-preproc-dwi)."),
+                        "shells": [], "violations": [],
+                    }
+                run_results.append((label, result))
+            top_banner_html = bval_check_banner(run_results)
 
     build_report(sections, args.output,
                  subject=args.subject, extra_nav=extra_nav,

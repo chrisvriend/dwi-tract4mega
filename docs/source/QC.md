@@ -80,7 +80,7 @@ A top-of-page banner reports whether the `.bval` file is consistent with the DWI
 ### 2. Noise Map
 
 **Source:** `dwidenoise` (MRtrix3, MP-PCA denoising)
-**File:** `*_space-dwi_desc-noise_dwi.nii.gz`
+**File:** `*_space-dwi_(dir-PE_)desc-noise_dwi.nii.gz`
 
 Displays the spatial distribution of the noise level estimated during MP-PCA denoising, shown as a mosaic of axial, coronal, and sagittal slices.
 
@@ -115,7 +115,7 @@ Cards are highlighted red if thresholds are exceeded (but should not necessarily
 
 #### Volume-to-volume motion plot
 
-Absolute and relative RMS displacement per volume. Large spikes indicate volumes with significant motion.
+Absolute and relative RMS displacement across volumse. Large spikes indicate volumes with significant motion.
 
 #### Outlier slice scatter plot
 
@@ -123,7 +123,29 @@ Each point represents a slice flagged as an outlier by eddy's outlier detection.
 
 #### Outlier volume inspection
 
-For each volume containing outlier slices, a toggle allows comparison of the raw (pre-eddy) and eddy-processed volume side by side. Use this to flag volumes with residual (motion) artefacts that warrant deletion using the `dwi-dropvols` helper script.
+For each volume containing outlier slices, a toggle allows comparison of the raw (pre-eddy) and eddy-processed volume side by side. Use this to spot volumes with residual (motion) artefacts (visible as so-called *Venetian blinds*) after preprocessing that warrant deletion using the `dwi-dropvols.py` helper script before continuing with `dwi-tracto`. 
+
+
+::::{grid} 1
+:gutter: 3
+:class-container: sd-w-75
+
+:::{grid-item-card} ✅ Correctly cleaned artefacts > no volume deletion / exclusion required.
+![Correct registration](_static/fixed_artifact.png)
+:::
+
+:::{grid-item-card} ❌ n >  volume deletion / exclusion required.
+![Incorrect registration](_static/notfixed_artifact.png)
+:::
+
+::::
+
+```{note}
+If more than 10% of total volumes contains  artefacts that remain after preprocessing it is better to exclude the scan from the analyses.
+```
+
+
+
 
 #### eddy_quad summary images
 

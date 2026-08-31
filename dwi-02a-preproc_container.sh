@@ -396,7 +396,7 @@ if [[ "$multirun" == true ]]; then
     done
 
     # quick QC: mean b0 per run, pre-topup
-    figdir="${outputdir}/dwi-preproc/${subj}${sessionpath}figures"
+    figdir="${outputdir}/dwi-preproc/${subj}${sessionpath}qc"
     for i in "${!run_labels[@]}"; do
         mean_b0="${fmapworkdir}/${subj}${sessionfile}dir-${run_labels[$i]}_desc-meanb0_epi.nii.gz"
         mrmath "${b0_niis[$i]}" mean "$mean_b0" -axis 3 -force
@@ -578,8 +578,7 @@ if [[ "$multirun" == true ]]; then
     exit 0
 fi
 ###############################################################################
-# END MULTI-RUN BRANCH -- everything below is the original single-run
-# pipeline, unchanged.
+# END MULTI-RUN BRANCH
 ###############################################################################
 
 # Specify the path to the DWI JSON sidecar

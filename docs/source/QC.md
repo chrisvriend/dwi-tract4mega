@@ -136,7 +136,7 @@ For each volume containing outlier slices, a toggle allows comparison of the raw
 ![fixed Venetian Blinds](_static/fixed_artifact.png)
 :::
 
-:::{grid-item-card} ❌ artefact were not fixed >  volume deletion / exclusion required.
+:::{grid-item-card} ❌ artefact not fixed >  volume deletion / exclusion required.
 ![remaining Venetian Blinds](_static/notfixed_artifact.png)
 :::
 

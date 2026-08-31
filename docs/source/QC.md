@@ -131,11 +131,11 @@ For each volume containing outlier slices, a toggle allows comparison of the raw
 :class-container: sd-w-75
 
 :::{grid-item-card} ✅ Correctly cleaned artefacts > no volume deletion / exclusion required.
-![Correct registration](_static/fixed_artifact.png)
+![fixed Venetian Blinds](_static/fixed_artifact.png)
 :::
 
 :::{grid-item-card} ❌ n >  volume deletion / exclusion required.
-![Incorrect registration](_static/notfixed_artifact.png)
+![remaining Venetian Blinds](_static/notfixed_artifact.png)
 :::
 
 ::::

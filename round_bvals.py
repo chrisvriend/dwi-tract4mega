@@ -20,7 +20,7 @@ def main():
     args = parser.parse_args()
 
     # Read bvals file
-    bvals = pd.read_csv(args.bvals, sep=' ', header=None)
+    bvals = pd.read_csv(args.bvals, sep=r'\s+', header=None)
 
     # Round to nearest  integer  
     bvals = bvals.round().astype(int)

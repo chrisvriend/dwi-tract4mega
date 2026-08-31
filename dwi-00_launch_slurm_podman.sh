@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --qos=normal
 #SBATCH --mem=20M
-#SBATCH --time=12:00:00
+#SBATCH --time=00:10:00
 #SBATCH --nice=2000
 #SBATCH --output=%x_%A_%a.log
 #SBATCH --array=1-1%1
@@ -389,34 +389,34 @@ else
 fi  # end preproc_only
 
 # ============================================================
-# FINAL SENTINEL (waits for all submitted jobs)
+# FINAL SENTINEL (waits for all submitted jobs) - optional
 # ============================================================
 
-# Collect all valid job IDs (filter out empty strings from skipped stages)
-valid_jobs=()
-for job_id in "${all_jobs[@]}"; do
-    if [[ "${job_id}" =~ ^[0-9]+$ ]]; then
-        valid_jobs+=("${job_id}")
-    fi
-done
+# # Collect all valid job IDs (filter out empty strings from skipped stages)
+# valid_jobs=()
+# for job_id in "${all_jobs[@]}"; do
+#     if [[ "${job_id}" =~ ^[0-9]+$ ]]; then
+#         valid_jobs+=("${job_id}")
+#     fi
+# done
 
-if [[ "${#valid_jobs[@]}" -gt 0 ]]; then
-    dep_string=$(IFS=:; printf "%s" "${valid_jobs[*]}")
-    dep_arg=(--dependency=afterok:${dep_string} --kill-on-invalid-dep=yes)
-    echo "Final sentinel job will depend on jobs: ${dep_string}"
-else
-    dep_arg=()
-    dep_string=""
-fi
+# if [[ "${#valid_jobs[@]}" -gt 0 ]]; then
+#     dep_string=$(IFS=:; printf "%s" "${valid_jobs[*]}")
+#     dep_arg=(--dependency=afterok:${dep_string} --kill-on-invalid-dep=yes)
+#     echo "Final sentinel job will depend on jobs: ${dep_string}"
+# else
+#     dep_arg=()
+#     dep_string=""
+# fi
 
-if [[ -z "${dep_string}" ]]; then
-    echo "No jobs were submitted, skipping final sentinel job."
-else
-    final_job_id=$(sbatch --wait --parsable \
-        "${dep_arg[@]}" \
-        --job-name="dwi_Hodor_${subj}" \
-        --time=00:01:00 -c 1 --mem=10M \
-        --wrap "echo 'Pipeline finished for ${subj}'")
+# if [[ -z "${dep_string}" ]]; then
+#     echo "No jobs were submitted, skipping final sentinel job."
+# else
+#     final_job_id=$(sbatch --wait --parsable \
+#         "${dep_arg[@]}" \
+#         --job-name="dwi_Hodor_${subj}" \
+#         --time=00:01:00 -c 1 --mem=10M \
+#         --wrap "echo 'Pipeline finished for ${subj}'")
 
-    echo "Pipeline completed for ${subj} (final job ${final_job_id})"
+#     echo "Pipeline completed for ${subj} (final job ${final_job_id})"
 fi

@@ -111,7 +111,9 @@ This section contains several sub-components:
 | Mean relative motion (mm) | > 0.5 mm |
 | Outlier slices (%) | > 5% |
 
+``` {note}
 Cards are highlighted red if thresholds are exceeded (but should not necessarily be used as a marker for exclusion!).
+```
 
 #### Volume-to-volume motion plot
 
@@ -134,7 +136,7 @@ For each volume containing outlier slices, a toggle allows comparison of the raw
 ![fixed Venetian Blinds](_static/fixed_artifact.png)
 :::
 
-:::{grid-item-card} ❌ n >  volume deletion / exclusion required.
+:::{grid-item-card} ❌ artefact were not fixed >  volume deletion / exclusion required.
 ![remaining Venetian Blinds](_static/notfixed_artifact.png)
 :::
 

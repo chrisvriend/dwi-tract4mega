@@ -58,7 +58,7 @@ running
 spec-json
 output-structure
 workflow
-troubleshooting
-Software
 QC
+troubleshooting
+Acknowledgement
 ```

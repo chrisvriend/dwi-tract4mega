@@ -69,21 +69,25 @@ in these pipeline launchers dwi-preproc and dwi-tracto are run back to back.
 :::: {tab-set}
 
 ::: {tab-item} Apptainer
-```{literalinclude} ../../dwi-00_launch_noslurm.sh
+```{literalinclude} ../../dwi-00_launch_noslurm_apptainer.sh
 :language: bash
 :linenos:
 ```
 :::
 
 ::: {tab-item} Docker
-
-code here
+```{literalinclude} ../../dwi-00_launch_noslurm_docker.sh
+:language: bash
+:linenos:
+```
 
 :::
 
 ::: {tab-item} Podman
-
-code here
+```{literalinclude} ../../dwi-00_launch_noslurm_podman.sh
+:language: bash
+:linenos:
+```
 
 :::
 

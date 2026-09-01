@@ -30,7 +30,7 @@ section — adjust where necessary.
 
 ```{note}
 Although it is recommended to first run **dwi-qc** before continuing to **dwi-tracto**,
-in these pipeline launchers dwi-preproc and dwi-tracto are run back to back.
+in these pipeline launchers dwi-preproc and dwi-tracto are run back to back unless you set the `--preproc-only` flag
 ```
 
 :::::: {tab-set}

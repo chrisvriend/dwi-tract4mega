@@ -117,7 +117,13 @@ Cards are highlighted red if thresholds are exceeded (but should not necessarily
 
 #### Volume-to-volume motion plot
 
-Absolute and relative RMS displacement across volumse. Large spikes indicate volumes with significant motion.
+Absolute and relative RMS displacement across volumes. Large spikes indicate volumes with significant motion.
+
+
+::::{grid} 1
+:::{grid-item-card} Example plot
+![Tractogram](_static/vol-vol_motion.png)
+::::
 
 #### Outlier slice scatter plot
 
@@ -171,6 +177,13 @@ Place image at ``docs/source/_static/qc_eddy_motion_example.png`` and replace th
 **Files:** pre- and post-correction EPI volumes, acquisition parameters, fieldmap
 
 A toggle switches between the EPI image **before** and **after** topup correction, for the phase-encode direction matching the DWI acquisition. An optional overlay shows the off-resonance fieldmap (Hz) on the corrected image.
+
+
+::::{grid} 1
+:::{grid-item-card} ✅ Succesful SDC
+![Tractogram](_static/sud.gif)
+::::
+
 
 **What to check:**
 - Geometric distortions (typically in the anterior–posterior direction) should be substantially reduced after correction.

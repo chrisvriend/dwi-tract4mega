@@ -419,4 +419,4 @@ fi  # end preproc_only
 #         --wrap "echo 'Pipeline finished for ${subj}'")
 
 #     echo "Pipeline completed for ${subj} (final job ${final_job_id})"
-fi
+#fi

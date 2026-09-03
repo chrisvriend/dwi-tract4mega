@@ -239,21 +239,37 @@ def _assign_shells(bvals, tol=100):
 
 
 def bval_consistency_check(dwi_path, bval_path, mask_path=None,
-                            shell_tol=100, pct_tolerance=8.0):
+                            shell_tol=100, pct_tolerance=8.0,
+                            bvals_array=None):
+    """
+    Check that mean signal decreases monotonically with increasing b-value.
+
+    dwi_path: 4D DWI volume whose number of volumes must match the bvals.
+    bval_path: path to a bvals file. Used to load bvals from disk UNLESS
+        `bvals_array` is given, in which case bval_path is only used for
+        error/status messaging (e.g. multi-run checks where bvals from
+        several runs have already been concatenated in memory to match a
+        combined DWI file).
+    bvals_array: optional pre-loaded/concatenated bvals array. When given,
+        this is used instead of re-reading bval_path from disk.
+    """
     bval_path = Path(bval_path)
     dwi_path = Path(dwi_path)
 
-    if not bval_path.exists():
-        return {"status": "error", "message": f"bvals file not found: {bval_path}",
-                "shells": [], "violations": []}
+    if bvals_array is None:
+        if not bval_path.exists():
+            return {"status": "error", "message": f"bvals file not found: {bval_path}",
+                    "shells": [], "violations": []}
+        try:
+            bvals = np.loadtxt(bval_path).flatten()
+        except Exception as exc:
+            return {"status": "error", "message": f"Could not parse bvals file: {exc}",
+                    "shells": [], "violations": []}
+    else:
+        bvals = np.asarray(bvals_array).flatten()
+
     if not dwi_path.exists():
         return {"status": "error", "message": f"DWI file not found: {dwi_path}",
-                "shells": [], "violations": []}
-
-    try:
-        bvals = np.loadtxt(bval_path).flatten()
-    except Exception as exc:
-        return {"status": "error", "message": f"Could not parse bvals file: {exc}",
                 "shells": [], "violations": []}
 
     img = nib.load(str(dwi_path))
@@ -263,9 +279,11 @@ def bval_consistency_check(dwi_path, bval_path, mask_path=None,
     if len(bvals) != n_vols:
         return {
             "status": "error",
-            "message": (f"bvals file has {len(bvals)} entries but the DWI series has "
+            "message": (f"bvals has {len(bvals)} entries but the DWI series has "
                         f"{n_vols} volume(s) -- these must correspond one-to-one. This "
-                        f"mismatch itself usually means the wrong bvals file is being used."),
+                        f"mismatch itself usually means the wrong bvals file is being used, "
+                        f"or (for multi-run data) that the bvals files were not concatenated "
+                        f"in the same order the DWI volumes were."),
             "shells": [], "violations": [],
         }
 
@@ -2155,7 +2173,15 @@ def main():
                          "Pass multiple paths for multi-run (dir-*) data.")
     p.add_argument("--bval-check-bvals", nargs="+", default=None,
                     help="Path(s) to bvals file(s) to sanity-check. "
-                         "Pass multiple paths for multi-run (dir-*) data.")
+                         "Pass multiple paths for multi-run (dir-*) data -- e.g. "
+                         "one file per phase-encode direction. When more than one "
+                         "path is given, all bvals are pooled together and checked "
+                         "as a single combined series against --bval-check-dwi "
+                         "(which should then be the combined/concatenated DWI "
+                         "volume covering every run, e.g. --eddy-raw-dwi). The "
+                         "order of paths does not need to match how the DWI "
+                         "volumes were concatenated, since bvals from all runs "
+                         "are pooled by shell rather than checked volume-by-volume.")
 
     p.add_argument("--eddy-json", default=None, help="Path to eddy_quad qc.json")
     p.add_argument("--eddy-rms", default=None, help="Path to *.eddy_movement_rms")
@@ -2212,8 +2238,9 @@ def main():
     p.add_argument("--bval-check-dwi", default=None,
                     help="4D DWI volume matching --bval-check-bvals (defaults to "
                          "--eddy-raw-dwi, then --eddy-preproc-dwi, if not given). "
-                         "For multi-run, the same DWI is used for all runs unless "
-                         "each run has a separate concatenated DWI.")
+                         "For multi-run, this should be the combined/concatenated "
+                         "DWI covering all runs -- its volume count must equal the "
+                         "sum of volumes across all --bval-check-bvals files.")
     p.add_argument("--bval-check-mask", default=None,
                     help="Optional brain mask restricting the signal check "
                          "(defaults to --brainmask-mask if not given)")
@@ -2329,6 +2356,17 @@ def main():
 
     # ------------------------------------------------------------------
     # Bval consistency banner — single or multi-run
+    #
+    # For multi-run data, the bvals from every run are pooled together
+    # in memory (concatenated into one array) and checked as a single
+    # combined series against the combined DWI volume. This avoids
+    # having to know/track the volume offsets of each run within the
+    # concatenated DWI file, and it also gives a statistically stronger
+    # per-shell signal estimate (more volumes per shell). The trade-off
+    # is that this reports one pass/fail for all runs together rather
+    # than a separate banner per run -- a bvals mismatch confined to
+    # just one run could in principle be partially masked by the other
+    # run's correct values.
     # ------------------------------------------------------------------
     top_banner_html = ""
     if args.bval_check_bvals:
@@ -2356,28 +2394,38 @@ def main():
             top_banner_html = bval_check_banner(bval_result)
 
         else:
-            # multi-run: one banner per bval file
-            # For the signal check we need a matching DWI per run.
-            # If --bval-check-dwi is not supplied we fall back to the
-            # merged eddy DWI (best effort) and note it in the error.
-            run_results = []
-            for bval_path in bval_paths:
-                label = run_label_from_path(bval_path)
-                if dwi_for_check:
-                    result = bval_consistency_check(
-                        dwi_for_check, bval_path,
-                        mask_path=mask_for_check,
-                        pct_tolerance=args.bval_check_pct_tolerance,
-                    )
-                else:
-                    result = {
-                        "status": "error",
-                        "message": ("No DWI volume available for the bval check -- pass "
-                                     "--bval-check-dwi (or --eddy-raw-dwi / --eddy-preproc-dwi)."),
-                        "shells": [], "violations": [],
-                    }
-                run_results.append((label, result))
-            top_banner_html = bval_check_banner(run_results)
+            # multi-run: pool all bvals into one combined array and check
+            # once against the combined DWI volume.
+            label = " + ".join(run_label_from_path(p) for p in bval_paths)
+
+            combined_bvals = None
+            load_error = None
+            try:
+                combined_bvals = np.concatenate(
+                    [np.loadtxt(p).flatten() for p in bval_paths]
+                )
+            except Exception as exc:
+                load_error = f"Could not parse one of the bvals files: {exc}"
+
+            if load_error:
+                result = {"status": "error", "message": load_error,
+                          "shells": [], "violations": []}
+            elif dwi_for_check:
+                result = bval_consistency_check(
+                    dwi_for_check, bval_paths[0],  # path only used for messaging
+                    mask_path=mask_for_check,
+                    pct_tolerance=args.bval_check_pct_tolerance,
+                    bvals_array=combined_bvals,
+                )
+            else:
+                result = {
+                    "status": "error",
+                    "message": ("No DWI volume available for the bval check -- pass "
+                                 "--bval-check-dwi (or --eddy-raw-dwi / --eddy-preproc-dwi)."),
+                    "shells": [], "violations": [],
+                }
+
+            top_banner_html = bval_check_banner([(label, result)])
 
     build_report(sections, args.output,
                  subject=args.subject, extra_nav=extra_nav,

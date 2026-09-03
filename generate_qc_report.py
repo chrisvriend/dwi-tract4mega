@@ -4,7 +4,7 @@ Generate QC HTML report for DWI preprocessing outputs.
 
 Currently implemented:
   - Bval consistency check — multi-run aware (one banner per dir-* run)
-  - Noise map section (dwidenoise output) — multi-run aware (one panel per dir-* run)
+  - Residuals noise map section (dwidenoise output) — multi-run aware (one panel per dir-* run)
   - Eddy QC section (eddy_quad)
   - Topup / susceptibility distortion correction QC
   - Brainmask QC
@@ -416,7 +416,7 @@ def bval_check_banner(result_or_results):
 # --------------------------------------------------------------------------
 
 def _noise_run_html(noise_path):
-    """Render axial/coronal/sagittal mosaic blocks for one noise map file."""
+    """Render axial/coronal/sagittal mosaic blocks for one noise residuals map file."""
     data, header = load_volume(noise_path)
     positive = data[data > 0]
     vmin, vmax = np.percentile(positive, [1, 99]) if positive.size else (None, None)
@@ -469,8 +469,8 @@ def noise_section(noise_paths):
 
     return f"""
     <section id="noise" class="qc-section">
-      <h2>Denoising &mdash; Noise Map</h2>
-      <p class="qc-desc">Spatial distribution of the noise level estimated by
+      <h2>Denoising &mdash; Noise Residuals Map</h2>
+      <p class="qc-desc">Spatial distribution of the residual noise level estimated by
       <code>dwidenoise</code> (MP-PCA).</p>
       {body}
     </section>
@@ -2149,9 +2149,9 @@ def build_report(sections, output_path, subject=None, extra_nav=None,
 def main():
     p = argparse.ArgumentParser(description="Generate DWI preprocessing QC HTML report")
 
-    # --noise and --bval-check-bvals now accept one OR more paths (multi-run)
-    p.add_argument("--noise", nargs="+", default=None,
-                    help="Path(s) to dwidenoise noise map(s). "
+    # --noiseres and --bval-check-bvals now accept one OR more paths (multi-run)
+    p.add_argument("--noiseres", nargs="+", default=None,
+                    help="Path(s) to dwidenoise residuals noise map(s). "
                          "Pass multiple paths for multi-run (dir-*) data.")
     p.add_argument("--bval-check-bvals", nargs="+", default=None,
                     help="Path(s) to bvals file(s) to sanity-check. "
@@ -2230,9 +2230,9 @@ def main():
     # ------------------------------------------------------------------
     # Noise section — single or multi-run
     # ------------------------------------------------------------------
-    if args.noise:
+    if args.noiseres:
         sections.append(
-            ("noise", "Noise Map", noise_section(args.noise))
+            ("noiseres", "Noise Residuals Map", noise_section(args.noiseres))
         )
 
     extra_nav = []

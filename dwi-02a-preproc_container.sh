@@ -298,6 +298,7 @@ if [[ "$multirun" == true ]]; then
         mif_dns="${dwiworkdir}/${subj}${sessionfile}dir-${label}_desc-dns_dwi.mif"
         mif_deg="${dwiworkdir}/${subj}${sessionfile}dir-${label}_desc-dns+degibbs_dwi.mif"
         noise_nii="${dwiworkdir}/${subj}${sessionfile}dir-${label}_desc-noise_dwi.nii.gz"
+        res_nii="${dwiworkdir}/${subj}${sessionfile}dir-${label}_desc-residuals_dwi.nii.gz"
 
         if [[ ! -f "$mif_deg" ]]; then
             mrconvert "$nii" "$mif_raw" -fslgrad "$bvec" "$rounded_bval" \
@@ -305,6 +306,10 @@ if [[ "$multirun" == true ]]; then
 
             dwidenoise "$mif_raw" "$mif_dns" \
                 -noise "$noise_nii" -nthreads ${nthreads} -force
+
+            # calculate residuals for QC 
+            mrcalc ${mif_raw} ${mif_dns} \
+            -subtract ${res_nii} -force
 
             mrdegibbs "$mif_dns" "$mif_deg" -nthreads ${nthreads} -force
 
@@ -569,7 +574,7 @@ if [[ "$multirun" == true ]]; then
 
     # for QC
     for i in "${!run_labels[@]}"; do
-        rsync -rltpD "${dwiworkdir}/${subj}${sessionfile}dir-${run_labels[$i]}_desc-noise_dwi.nii.gz" \
+        rsync -rltpD "${dwiworkdir}/${subj}${sessionfile}dir-${run_labels[$i]}_desc-residuals_dwi.nii.gz" \
             "${outputdir}/dwi-preproc/${subj}${sessionpath}qc/" 2>/dev/null || true
     done
     rsync -rltpD "$runkey" "${outputdir}/dwi-preproc/${subj}${sessionpath}dwi/"
@@ -611,6 +616,11 @@ if [ ! -f ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_des
         ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
         -noise ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz \
         -nthreads ${nthreads} -force
+
+    # calculate residuals for QC 
+    mrcalc ${bidsdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}dwi.nii.gz \
+        ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
+        -subtract ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-residuals_dwi.mif -force    
 
     #Remove Gibbs Ringing Artifacts
     mrdegibbs ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-dns_dwi.mif \
@@ -1067,7 +1077,7 @@ rsync -rltpDv ${subj}${sessionfile}space-dwi_desc-unwarped_epi* \
     ${outputdir}/dwi-preproc/${subj}${sessionpath}fmap
 
 # for QC
-rsync -rltpDv ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz \
+rsync -rltpDv ${workdir}/${subj}${sessionpath}dwi/${subj}${sessionfile}space-dwi_desc-residuals_dwi.nii.gz \
     ${outputdir}/dwi-preproc/${subj}${sessionpath}qc
 
 echo "Preprocessing complete."

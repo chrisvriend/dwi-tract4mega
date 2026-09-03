@@ -89,7 +89,7 @@ glob_matches() {
 
 # ---------------------------------------------------------------------------
 # Helper: build argument list for generate_qc_report.py based on existing
-# files.  Multi-run aware: bval-check-bvals and noise may have dir-* variants;
+# files.  Multi-run aware: bval-check-bvals and residuals noise may have dir-* variants;
 # all matching files are passed so the Python script can show one panel per run.
 # ---------------------------------------------------------------------------
 build_qc_args() {
@@ -123,23 +123,23 @@ build_qc_args() {
     fi
 
     # ------------------------------------------------------------------
-    # noise — single-run: sub-XX_ses-YY_space-dwi_desc-noise_dwi.nii.gz
-    #         multi-run:  sub-XX_ses-YY_dir-*_space-dwi_desc-noise_dwi.nii.gz
+    # noise — single-run: sub-XX_ses-YY_space-dwi_desc-residuals_dwi.nii.gz
+    #         multi-run:  sub-XX_ses-YY_dir-*_space-dwi_desc-residuals_dwi.nii.gz
     # Pass ALL matching noise maps; generate_qc_report.py accepts nargs='+'.
     # ------------------------------------------------------------------
-    local noise_single="${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-noise_dwi.nii.gz"
-    local noise_glob="${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}dir-*_space-dwi_desc-noise_dwi.nii.gz"
+    local noise_single="${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}space-dwi_desc-residuals_dwi.nii.gz"
+    local noise_glob="${outputdir}/dwi-preproc/${subj}${sessionpath}qc/${subj}${sessionfile}dir-*_space-dwi_desc-residuals_dwi.nii.gz"
 
     if [[ -f "${noise_single}" ]]; then
-        qc_args+=( "--noise" "${noise_single}" )
+        qc_args+=( "--noiseres" "${noise_single}" )
     else
         shopt -s nullglob
         local noise_matches=( ${noise_glob} )
         shopt -u nullglob
         if (( ${#noise_matches[@]} > 0 )); then
-            qc_args+=( "--noise" "${noise_matches[@]}" )
+            qc_args+=( "--noiseres" "${noise_matches[@]}" )
         else
-            log "$BLUE" "Skipping --noise: no noise map file(s) found"
+            log "$BLUE" "Skipping --noiseres: no residuals noise map file(s) found"
         fi
     fi
 

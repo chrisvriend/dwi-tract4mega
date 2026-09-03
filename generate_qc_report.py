@@ -468,9 +468,9 @@ def noise_section(noise_paths):
     body = "\n".join(run_blocks)
 
     return f"""
-    <section id="noise" class="qc-section">
-      <h2>Denoising &mdash; Noise Residuals Map</h2>
-      <p class="qc-desc">Spatial distribution of the residual noise level estimated by
+    <section id="denoise" class="qc-section">
+      <h2>Denoising &mdash; Denoising Residuals Map</h2>
+      <p class="qc-desc">Spatial distribution of the residual map estimated by
       <code>dwidenoise</code> (MP-PCA).</p>
       {body}
     </section>
@@ -2228,11 +2228,11 @@ def main():
     sections = []
 
     # ------------------------------------------------------------------
-    # Noise section — single or multi-run
+    # Denoising section — single or multi-run
     # ------------------------------------------------------------------
     if args.noiseres:
         sections.append(
-            ("noiseres", "Noise Residuals Map", noise_section(args.noiseres))
+            ("denoise", "Denoising Residuals Map", noise_section(args.noiseres))
         )
 
     extra_nav = []
